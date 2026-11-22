@@ -45,9 +45,9 @@ class MenuScene extends Phaser.Scene {
     start.on('pointerdown', () => this.startGame());
     this.input.keyboard.on('keydown-ENTER', () => this.startGame());
 
-    this.add.text(640, 660, 'Right-click move · QWER skills · V build · B shop · U upgrade Keep · F rally · Space center camera · P pause',
+    this.add.text(640, 660, 'Right-click move · QWER aim + left-click cast · V build · B shop · U upgrade Keep · F rally · hold Space look around · P pause',
       { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);
-    this.add.text(640, 684, 'Ranks: Ctrl/Shift+Q/W/E/R or click "+".   Sound: M.', { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);
+    this.add.text(640, 684, 'All skills unlocked from the start and grow stronger every level.   Sound: M.', { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);
     this.refresh();
   }
 
@@ -64,7 +64,7 @@ class MenuScene extends Phaser.Scene {
     this.add.text(x + 96, y + 58, key === 'warrior' ? 'Melee · tanky brawler' : 'Ranged · fragile · area damage', { fontFamily: FONT, fontSize: '13px', color: '#9ca3af' });
     const lines = ['Q', 'W', 'E', 'R'].map(k => k + '  ' + sk[k].name + ' — ' + sk[k].desc.split('.')[0]);
     this.add.text(x + 16, y + 96, lines.join('\n'), { fontFamily: FONT, fontSize: '12px', color: '#e5e7eb', lineSpacing: 5, wordWrap: { width: W - 30 } });
-    this.add.text(x + 16, y + H - 26, 'HP ' + d.hp + '   Mana ' + d.mana + '   Range ' + d.range, { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' });
+    this.add.text(x + 16, y + H - 26, 'HP ' + d.hp + '   Damage ' + d.damage + '   Range ' + d.range, { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' });
     this.heroCards[key] = r;
   }
 

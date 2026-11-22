@@ -23,11 +23,9 @@ class GameScene extends Phaser.Scene {
     this.projectiles = [];
     this.stats = { kills: 0, time: 0, wavesCleared: 0 };
     this.cursorMode = null;      // null | 'attack' | 'rally'
-    this.camLock = false;
-    this.spaceHeld = false;
+    this.spaceHeld = false;      // hold Space to look around (camera is otherwise locked on the hero)
     this.rightHeld = false;
     this.followT = 0;
-    this.painting = false;
     this.pointerInside = false;
 
     this.pathing = new Pathing(this);
@@ -49,7 +47,8 @@ class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.setBounds(0, 0, CONFIG.WORLD_W, CONFIG.WORLD_H);
     cam.setBackgroundColor('#1b2a1a');
-    this.camTarget = { x: 0, y: Phaser.Math.Clamp(this.hero.y - CONFIG.VIEW_H / 2, 0, CONFIG.WORLD_H - CONFIG.VIEW_H) };
+    this.camTarget = { x: 0, y: 0 };
+    this.jumpToHero();
     cam.setScroll(this.camTarget.x, this.camTarget.y);
 
     this.setupInput();
@@ -153,8 +152,7 @@ class GameScene extends Phaser.Scene {
   setupInput() {
     const kb = this.input.keyboard;
     this.input.mouse.disableContextMenu();
-    kb.addCapture('SPACE,UP,DOWN,LEFT,RIGHT,TAB');
-    this.keys = kb.addKeys('UP,DOWN,LEFT,RIGHT');
+    kb.addCapture('SPACE,TAB');
 
     this.input.on('gameout', () => { this.pointerInside = false; });
     this.input.on('gameover', () => { this.pointerInside = true; });
@@ -166,11 +164,13 @@ class GameScene extends Phaser.Scene {
       if (this.ui && this.ui.isOverUI(pointer.x, pointer.y)) return;
       const wx = pointer.worldX, wy = pointer.worldY;
       if (pointer.middleButtonDown()) {
+        if (!this.spaceHeld) return;
         this.dragPan = { x: pointer.x, y: pointer.y, sx: this.cameras.main.scrollX, sy: this.cameras.main.scrollY };
         return;
       }
       if (this.paused) return;
       if (pointer.rightButtonDown()) {
+        if (this.hero.aiming) { this.hero.aiming = null; return; }   // cancel aim only, no move order
         if (this.build.placing) { this.build.cancel(); return; }
         if (this.cursorMode) { this.setCursorMode(null); return; }
         this.rightClickAt(wx, wy);
@@ -179,11 +179,8 @@ class GameScene extends Phaser.Scene {
         return;
       }
       if (pointer.leftButtonDown()) {
-        if (this.build.placing) {
-          this.build.tryPlaceAt(wx, wy);
-          this.painting = CONFIG.buildings[this.build.placing] && CONFIG.buildings[this.build.placing].onPath;
-          return;
-        }
+        if (this.hero.aiming) { this.hero.confirmAim(wx, wy); return; }
+        if (this.build.placing) { this.build.tryPlaceAt(wx, wy); return; }
         if (this.cursorMode === 'attack') {
           const dest = this.hero.commandAttackMove(wx, wy);
           if (dest) Feel.clickRing(dest.x, dest.y, 0xff4040);
@@ -202,21 +199,17 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointermove', (pointer) => {
       this.pointerInside = true;
       if (this.dragPan) {
-        if (!pointer.middleButtonDown()) { this.dragPan = null; return; }
+        if (!pointer.middleButtonDown() || !this.spaceHeld) { this.dragPan = null; return; }
         this.camTarget.x = this.dragPan.sx - (pointer.x - this.dragPan.x);
         this.camTarget.y = this.dragPan.sy - (pointer.y - this.dragPan.y);
         this.clampCamTarget();
         this.cameras.main.setScroll(this.camTarget.x, this.camTarget.y);
-      }
-      if (this.painting && this.build.placing && pointer.leftButtonDown() && !this.ui.isOverUI(pointer.x, pointer.y)) {
-        this.build.tryPlaceAt(pointer.worldX, pointer.worldY, true);
       }
     });
 
     this.input.on('pointerup', (pointer) => {
       if (!pointer.rightButtonDown()) this.rightHeld = false;
       if (!pointer.middleButtonDown()) this.dragPan = null;
-      if (!pointer.leftButtonDown()) { this.painting = false; this.build.lastPaintTile = null; }
     });
 
     kb.on('keydown', (e) => this.onKeyDown(e));
@@ -262,6 +255,7 @@ class GameScene extends Phaser.Scene {
   }
 
   setCursorMode(mode) {
+    if (mode) this.hero.aiming = null;
     this.cursorMode = mode;
     this.input.setDefaultCursor(mode ? 'crosshair' : 'default');
     this.events.emit('cursorMode', mode);
@@ -273,7 +267,8 @@ class GameScene extends Phaser.Scene {
     const code = e.code;
     const mod = e.ctrlKey || e.shiftKey;
     if (code === 'Escape') {
-      if (this.build.placing) this.build.cancel();
+      if (this.hero.aiming) this.hero.aiming = null;
+      else if (this.build.placing) this.build.cancel();
       else if (this.cursorMode) this.setCursorMode(null);
       else if (this.ui.shopOpen) this.ui.toggleShop(false);
       else if (this.build.selected) this.build.select(null);
@@ -282,18 +277,15 @@ class GameScene extends Phaser.Scene {
     }
     if (code === 'KeyP') { this.togglePause(); return; }
     if (code === 'KeyM') { Settings.toggle('mute'); this.events.emit('settingsChanged'); return; }
-    if (code === 'Space') {
-      if (!this.spaceHeld) this.jumpToHero();
-      this.spaceHeld = true;
-      return;
-    }
-    if (code === 'KeyY') { this.camLock = !this.camLock; this.events.emit('notice', this.camLock ? 'Camera locked to hero (Y)' : 'Camera free'); return; }
+    if (code === 'Space') { this.spaceHeld = true; return; }
     if (this.paused) return;
 
     const skillKey = { KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R' }[code];
     if (skillKey) {
-      if (mod) { e.preventDefault && e.preventDefault(); this.hero.rankUp(skillKey); }
-      else if (!e.repeat) this.hero.beginSkill(skillKey);
+      if (e.repeat || mod) return;
+      const w = this.pointerWorld();
+      this.hero.pressSkill(skillKey, w.x, w.y);
+      if (this.hero.aiming) { this.build.cancel(); if (this.cursorMode) this.setCursorMode(null); }
       return;
     }
     switch (code) {
@@ -308,7 +300,7 @@ class GameScene extends Phaser.Scene {
       case 'KeyV': this.ui.toggleBuildPanel(); break;
       case 'KeyU': this.upgradeKeep(); break;
       case 'KeyN': case 'Enter': this.waves.startWave(); break;
-      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6': {
+      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': {
         const n = code.slice(-1);
         const type = Object.keys(CONFIG.buildings).find(k => CONFIG.buildings[k].key === n);
         if (type) { this.build.startPlacing(type); this.ui.toggleBuildPanel(true); }
@@ -319,13 +311,7 @@ class GameScene extends Phaser.Scene {
 
   onKeyUp(e) {
     const code = e.code;
-    if (code === 'Space') { this.spaceHeld = false; return; }
-    const skillKey = { KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R' }[code];
-    if (skillKey && this.hero.aiming[skillKey]) {
-      if (this.paused || this.ended) { delete this.hero.aiming[skillKey]; return; }
-      const w = this.pointerWorld();
-      this.hero.releaseSkill(skillKey, w.x, w.y);
-    }
+    if (code === 'Space') { this.spaceHeld = false; this.dragPan = null; }
   }
 
   togglePause(force) {
@@ -349,9 +335,12 @@ class GameScene extends Phaser.Scene {
     this.camTarget.y = Phaser.Math.Clamp(this.camTarget.y, 0, CONFIG.WORLD_H - CONFIG.VIEW_H);
   }
 
+  // Camera follows the hero (or the Keep while the hero is dead).
   jumpToHero() {
-    this.camTarget.x = this.hero.x - CONFIG.VIEW_W / 2;
-    this.camTarget.y = this.hero.y - CONFIG.VIEW_H / 2;
+    const h = this.hero, k = this.keep;
+    const fx = h.alive ? h.x : k.x, fy = h.alive ? h.y : k.y;
+    this.camTarget.x = fx - CONFIG.VIEW_W / 2;
+    this.camTarget.y = fy - CONFIG.VIEW_H / 2;
     this.clampCamTarget();
   }
 
@@ -364,9 +353,10 @@ class GameScene extends Phaser.Scene {
 
   updateCamera(dt) {
     const C = CONFIG.camera, cam = this.cameras.main;
-    if ((this.camLock || this.spaceHeld) && this.hero.alive) {
+    if (!this.spaceHeld) {
       this.jumpToHero();
     } else if (!this.dragPan) {
+      // free look while Space is held: edge pan (middle-drag and minimap also work)
       const p = this.input.activePointer;
       let mx = 0, my = 0;
       if (this.pointerInside && document.hasFocus()) {
@@ -375,13 +365,8 @@ class GameScene extends Phaser.Scene {
         if (p.y <= C.edgeSize) my -= 1;
         if (p.y >= CONFIG.VIEW_H - C.edgeSize) my += 1;
       }
-      let kx = 0, ky = 0;
-      if (this.keys.LEFT.isDown) kx -= 1;
-      if (this.keys.RIGHT.isDown) kx += 1;
-      if (this.keys.UP.isDown) ky -= 1;
-      if (this.keys.DOWN.isDown) ky += 1;
-      this.camTarget.x += (mx * C.edgeSpeed + kx * C.keySpeed) * dt;
-      this.camTarget.y += (my * C.edgeSpeed + ky * C.keySpeed) * dt;
+      this.camTarget.x += mx * C.edgeSpeed * dt;
+      this.camTarget.y += my * C.edgeSpeed * dt;
       this.clampCamTarget();
     }
     const k = Math.min(1, dt * C.smoothing);
@@ -416,21 +401,15 @@ class GameScene extends Phaser.Scene {
   addBuilding(b) {
     this.buildings.push(b);
     this.pathing.building[this.pathing.idx(b.tx, b.ty)] = b;
-    if (b.type === 'wall') this.pathing.computeFlowField();
     this.events.emit('buildingsChanged');
   }
 
-  removeBuilding(b, destroyed) {
+  removeBuilding(b) {
     const i = this.pathing.idx(b.tx, b.ty);
     if (this.pathing.building[i] === b) this.pathing.building[i] = null;
     b.destroy();
     this.buildings = this.buildings.filter(x => x !== b);
-    if (b.type === 'wall') this.pathing.computeFlowField();
     if (this.build.selected === b) this.build.select(null);
-    if (destroyed) {
-      this.ping(b.x, b.y, 0xffaa00);
-      this.events.emit('notice', CONFIG.buildings[b.type].name + ' destroyed!');
-    }
     this.events.emit('buildingsChanged');
   }
 
@@ -536,15 +515,11 @@ class GameScene extends Phaser.Scene {
       if (a.hp < a.maxHp) bar(a.x, a.y - a.radius - 7, 20, 3, a.hp / a.maxHp, 0x4ade80);
       if (a.status.atkSpeedT > 0) { g.lineStyle(1.5, 0xffb347, 0.8); g.strokeCircle(a.x, a.y, a.radius + 3); }
     }
-    for (const b of this.buildings) {
-      if (b.alive && b.hp < b.maxHp && vis(b.x, b.y)) bar(b.x, b.y - 20, 28, 3, b.hp / b.maxHp, 0x4ade80);
-    }
     const k = this.keep;
     bar(k.x, k.ry - 22, 140, 8, k.hp / k.maxHp, 0x4ade80);
     const h = this.hero;
     if (h.alive) {
-      bar(h.x, h.y - h.radius - 14, 44, 5, h.hp / h.maxHp, 0x22c55e);
-      bar(h.x, h.y - h.radius - 8, 44, 3, h.mana / h.stats.maxMana, 0x3b82f6);
+      bar(h.x, h.y - h.radius - 12, 44, 5, h.hp / h.maxHp, 0x22c55e);
       if (h.status.armorT > 0) { g.lineStyle(3, 0xffb347, 0.7); g.strokeCircle(h.x, h.y, h.radius + 5); }
       if (h.windCloakT > 0) { g.lineStyle(2, 0x9be8c9, 0.7); g.strokeCircle(h.x, h.y, h.radius + 8); }
       if (h.stunned) { g.fillStyle(0xffd23f, 1); g.fillCircle(h.x - 6, h.y - h.radius - 20, 3); g.fillCircle(h.x + 6, h.y - h.radius - 20, 3); }
@@ -555,9 +530,7 @@ class GameScene extends Phaser.Scene {
     ig.clear();
     const w = this.pointerWorld();
     if (h.alive) {
-      for (const key in h.aiming) {
-        if (h.aiming[key].t >= CONFIG.heroCommon.indicatorDelay && h.ranks[key] > 0) h.kit.drawIndicator(ig, key, h.ranks[key], w.x, w.y);
-      }
+      if (h.aiming) h.kit.drawIndicator(ig, h.aiming, w.x, w.y);
       // move destination
       if (h.order && (h.order.type === 'move' || h.order.type === 'amove')) {
         ig.lineStyle(1.5, h.order.type === 'amove' ? 0xff4040 : 0x44ff66, 0.5);

@@ -1,4 +1,4 @@
-// Enemy unit: flow-field toward the Keep, aggro on hero/allies, attacks blocking walls.
+// Enemy unit: flow-field toward the Keep, aggro on hero/allies. Buildings are immune and ignored.
 
 class Enemy extends Unit {
   constructor(scene, type, x, y, mods) {
@@ -39,47 +39,25 @@ class Enemy extends Unit {
     if (s.tauntT > 0 && s.tauntBy && s.tauntBy.alive) return s.tauntBy;
     const d = this.def;
 
-    // Sappers prefer structures nearby
-    if (this.type === 'sapper') {
-      let best = null, bestD = d.buildingAggro;
-      for (const b of sc.buildings) {
-        if (!b.alive || !b.adjLane) continue;
-        const dd = b.edgeDist(this.x, this.y);
-        if (dd < bestD) { bestD = dd; best = b; }
+    // Keep-breakers (Sapper) ignore the hero and allies and rush the Keep
+    if (!d.keepBreaker) {
+      // hero / allies in aggro range
+      let best = null, bestD = d.aggro;
+      const h = sc.hero;
+      if (h && h.alive && !h.invulnerable) {
+        const dd = h.edgeDist(this.x, this.y);
+        if (dd < bestD) { bestD = dd; best = h; }
+      }
+      for (const a of sc.allies) {
+        if (!a.alive) continue;
+        const dd = a.edgeDist(this.x, this.y);
+        if (dd < bestD) { bestD = dd; best = a; }
       }
       if (best) return best;
     }
 
-    // hero / allies in aggro range
-    let best = null, bestD = d.aggro;
-    const h = sc.hero;
-    if (h && h.alive && !h.invulnerable) {
-      const dd = h.edgeDist(this.x, this.y);
-      if (dd < bestD) { bestD = dd; best = h; }
-    }
-    for (const a of sc.allies) {
-      if (!a.alive) continue;
-      const dd = a.edgeDist(this.x, this.y);
-      if (dd < bestD) { bestD = dd; best = a; }
-    }
-    if (best) return best;
-
-    // archers shoot any building in range
-    if (d.ranged) {
-      for (const b of sc.buildings) {
-        if (b.alive && b.edgeDist(this.x, this.y) <= this.range) return b;
-      }
-    }
-
     // the Keep if in range
     if (sc.keep.alive && sc.keep.edgeDist(this.x, this.y) - this.radius <= this.range + 6) return sc.keep;
-
-    // blocking wall on our flow path
-    const next = sc.pathing.flowNext(this.x, this.y);
-    if (next) {
-      const b = sc.pathing.buildingAt(next.tx, next.ty);
-      if (b && b.alive) return b;
-    }
     return null;
   }
 
@@ -110,12 +88,8 @@ class Enemy extends Unit {
         this.vx = 0; this.vy = 0;
         this.facing = Math.atan2(t.y - this.y, t.x - this.x);
         if (this.atkCd <= 0) this.attack(t);
-      } else if (t.isStructure && t !== this.scene.keep && this.type !== 'sapper' && !this.def.ranged) {
-        this.followFlow(sp, dt);
-      } else if (t.isStructure && t === this.scene.keep) {
-        this.followFlow(sp, dt);
       } else if (t.isStructure) {
-        this.moveToward(t.x, t.y, sp, dt, 1500);
+        this.followFlow(sp, dt);
       } else {
         // chase a unit
         const p = this.scene.pathing;
@@ -167,8 +141,8 @@ class Enemy extends Unit {
       this.specialT -= dt;
       if (this.specialT <= 0) {
         const targets = Combat.playerUnitsInRadius(this.x, this.y, d.slamRadius * 0.9);
-        const structs = Combat.structuresInRadius(this.x, this.y, d.slamRadius * 0.6);
-        if (targets.length || structs.length) {
+        const keepNear = this.scene.keep.alive && this.scene.keep.edgeDist(this.x, this.y) <= d.slamRadius * 0.6;
+        if (targets.length || keepNear) {
           this.specialT = d.slamEvery;
           this.slam = { t: d.slamWindup, x: this.x, y: this.y, g: this.scene.add.graphics().setDepth(8) };
           Sfx.play('boss');
@@ -208,8 +182,9 @@ class Enemy extends Unit {
         Combat.dealDamage(u, d.slamDamage * (this.damage / d.damage), { source: this, knock: { x: u.x - s.x, y: u.y - s.y, force: 380 } });
         if (u.alive) u.applyStun(d.slamStun);
       }
-      for (const b of Combat.structuresInRadius(s.x, s.y, d.slamRadius)) {
-        Combat.dealDamage(b, d.slamDamage * (this.damage / d.damage), { source: this, structureMul: d.structureMul });
+      const k = this.scene.keep;
+      if (k.alive && k.edgeDist(s.x, s.y) <= d.slamRadius) {
+        Combat.dealDamage(k, d.slamDamage * (this.damage / d.damage), { source: this, structureMul: d.structureMul });
       }
       Feel.ring(s.x, s.y, d.slamRadius, 0xff5030, { duration: 400, width: 6, fill: true });
       Feel.burst(s.x, s.y, 0x8b1a1a, 24);

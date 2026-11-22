@@ -1,11 +1,10 @@
-// Grid placement, selection, upgrade / repair / sell.
+// Grid placement, selection, upgrade / sell.
 
 class BuildSystem {
   constructor(scene) {
     this.scene = scene;
     this.placing = null;     // building type being placed
     this.selected = null;    // Building or Keep
-    this.lastPaintTile = null;
   }
 
   get keep() { return this.scene.keep; }
@@ -26,25 +25,15 @@ class BuildSystem {
     const t = p.tileType(tx, ty);
     if (t === TILE_T.KEEP) return { ok: false, reason: 'Occupied' };
     if (!this.inBuildRadius(tx, ty)) return { ok: false, reason: 'Outside build area (upgrade the Keep)' };
-    if (def.onPath) {
-      if (t === TILE_T.CONNECTOR) return { ok: false, reason: 'Connectors must stay open' };
-      if (t !== TILE_T.PATH) return { ok: false, reason: 'Walls go on lanes' };
-      if (tx < m.keepNoBuildX) return { ok: false, reason: 'Too close to the Keep' };
-      if (tx >= m.spawnZoneX) return { ok: false, reason: 'Too close to the spawn' };
-      // keep units from getting sealed inside walls: don't allow on a tile where the hero stands
-      const h = this.scene.hero;
-      if (h.alive && p.tileOf(h.x) === tx && p.tileOf(h.y) === ty) return { ok: false, reason: 'Hero is standing there' };
-    } else {
-      if (t !== TILE_T.TERRAIN) return { ok: false, reason: 'Towers go next to lanes, not on them' };
-      const a = m.towerAdjacency;
-      let near = false;
-      for (let y = ty - a; y <= ty + a && !near; y++)
-        for (let x = tx - a; x <= tx + a; x++) if (p.isLane(x, y)) { near = true; break; }
-      if (!near) return { ok: false, reason: 'Must be next to a lane' };
-      // stay off the Keep's walls
-      const k = m.keep;
-      if (tx >= k.x - 1 && tx <= k.x + k.w && ty >= k.y - 1 && ty <= k.y + k.h) return { ok: false, reason: 'Too close to the Keep' };
-    }
+    if (t !== TILE_T.TERRAIN) return { ok: false, reason: 'Buildings go next to lanes, not on them' };
+    const a = m.towerAdjacency;
+    let near = false;
+    for (let y = ty - a; y <= ty + a && !near; y++)
+      for (let x = tx - a; x <= tx + a; x++) if (p.isLane(x, y)) { near = true; break; }
+    if (!near) return { ok: false, reason: 'Must be next to a lane' };
+    // stay off the Keep's walls
+    const k = m.keep;
+    if (tx >= k.x - 1 && tx <= k.x + k.w && ty >= k.y - 1 && ty <= k.y + k.h) return { ok: false, reason: 'Too close to the Keep' };
     if (!this.scene.economy.canAfford(def.cost)) return { ok: false, reason: 'Not enough gold', gold: true };
     return { ok: true };
   }
@@ -57,27 +46,24 @@ class BuildSystem {
     }
     this.placing = type;
     this.selected = null;
+    this.scene.hero.aiming = null;
     this.scene.events.emit('buildModeChanged');
   }
 
   cancel() {
     const had = !!this.placing;
     this.placing = null;
-    this.lastPaintTile = null;
     if (had) this.scene.events.emit('buildModeChanged');
     return had;
   }
 
-  tryPlaceAt(wx, wy, silent = false) {
+  tryPlaceAt(wx, wy) {
     if (!this.placing) return false;
     const p = this.scene.pathing;
     const tx = p.tileOf(wx), ty = p.tileOf(wy);
-    const key = tx + ',' + ty;
-    if (silent && this.lastPaintTile === key) return false;
-    this.lastPaintTile = key;
     const c = this.check(this.placing, tx, ty);
     if (!c.ok) {
-      if (!silent) { Sfx.play('error'); this.scene.events.emit('notice', c.reason); }
+      Sfx.play('error'); this.scene.events.emit('notice', c.reason);
       return false;
     }
     const def = CONFIG.buildings[this.placing];
@@ -107,23 +93,12 @@ class BuildSystem {
     this.scene.events.emit('selectionChanged');
   }
 
-  repairSelected() {
-    const b = this.selected;
-    if (!b || !b.alive || b === this.keep) return;
-    const cost = b.repairCost();
-    if (cost <= 0) return;
-    if (!this.scene.economy.spend(cost)) return;
-    b.hp = b.maxHp;
-    Feel.burst(b.x, b.y, 0x7cd67c, 10);
-    Sfx.play('build');
-  }
-
   sellSelected() {
     const b = this.selected;
     if (!b || !b.alive || b === this.keep) return;
     this.scene.economy.add(b.sellValue(), b.x, b.y - 10);
     Sfx.play('gold');
-    this.scene.removeBuilding(b, false);
+    this.scene.removeBuilding(b);
     this.select(null);
   }
 

@@ -10,11 +10,11 @@ class Hero extends Unit {
     this.rotates = true;
     this.level = 1;
     this.xp = 0;
-    this.skillPoints = 1;
-    this.ranks = { Q: 0, W: 0, E: 0, R: 0 };
     this.cooldowns = { Q: 0, W: 0, E: 0, R: 0 };
     this.cdMax = { Q: 1, W: 1, E: 1, R: 1 };
-    this.items = new Array(CONFIG.inventorySlots).fill(null);
+    this.items = new Array(CONFIG.inventorySlots).fill(null);   // item keys, one slot per type
+    this.itemLevels = {};    // key -> level
+    this.itemSpent = {};     // key -> total gold spent (for sell refunds)
     this.order = null;
     this.path = null; this.pathIdx = 0;
     this.stuckT = 0;
@@ -23,13 +23,12 @@ class Hero extends Unit {
     this.autoTarget = null;
     this.needReplan = false;
     this.buffered = null;
-    this.aiming = {};
+    this.aiming = null;      // skill key waiting for a left-click
     this.respawnT = 0;
     this.windCloakT = 0;
     this.trailT = 0;
     this.invulnerable = false;
     this.recalcStats();
-    this.mana = this.stats.maxMana;
     this.hp = this.maxHp;
     this.kit = heroKey === 'warrior' ? new WarriorKit(this) : new MageKit(this);
     this.skillDefs = CONFIG.skills[heroKey];
@@ -55,32 +54,27 @@ class Hero extends Unit {
   recalcStats() {
     const d = this.def, pl = d.perLevel, lv = this.level - 1;
     const s = {
-      maxHp: d.hp + pl.hp * lv, maxMana: d.mana + pl.mana * lv, damage: d.damage + pl.damage * lv,
+      maxHp: d.hp + pl.hp * lv, damage: d.damage + pl.damage * lv,
       armor: d.armor + pl.armor * lv, speed: d.speed, attackSpeed: 1, hpRegen: d.hpRegen + lv * 0.3,
-      manaRegen: d.manaRegen + lv * 0.3, cdr: 0, lifesteal: 0, chain: 0, thorns: 0, skillDamage: 0,
+      cdr: 0, lifesteal: 0, chain: 0, thorns: 0, skillDamage: 0,
       windCloak: 0, revive: 0, acquireRange: d.acquireRange,
     };
     for (const key of this.items) {
       if (!key) continue;
-      const st = CONFIG.items[key].stats;
+      const st = CONFIG.items[key].stats, n = this.itemLevels[key] || 1;
       for (const k in st) {
-        if (k === 'hp') s.maxHp += st[k];
-        else if (k === 'mana') s.maxMana += st[k];
-        else if (k === 'attackSpeed') s.attackSpeed += st[k];
-        else s[k] = (s[k] || 0) + st[k];
+        if (k === 'hp') s.maxHp += st[k] * n;
+        else if (k === 'attackSpeed') s.attackSpeed += st[k] * n;
+        else s[k] = (s[k] || 0) + st[k] * n;
       }
     }
-    s.cdr = Math.min(0.4, s.cdr);
-    const oldMax = this.maxHp, oldMana = this.stats ? this.stats.maxMana : s.maxMana;
+    for (const k in CONFIG.itemCaps) s[k] = Math.min(CONFIG.itemCaps[k], s[k]);
+    const oldMax = this.maxHp;
     this.stats = s;
     this.maxHp = Math.round(s.maxHp);
     this.armor = s.armor;
     if (this.maxHp > oldMax) this.hp += this.maxHp - oldMax;
     this.hp = Math.min(this.hp, this.maxHp);
-    if (this.mana != null) {
-      if (s.maxMana > oldMana) this.mana += s.maxMana - oldMana;
-      this.mana = Math.min(this.mana, s.maxMana);
-    }
   }
 
   get moveSpeed() {
@@ -89,8 +83,20 @@ class Hero extends Unit {
     return sp;
   }
 
+  // ------------------------------------------------------------ skill scaling by level
   skillDamage(base) {
-    return base * (1 + CONFIG.heroCommon.skillLevelScaling * (this.level - 1)) * (1 + this.stats.skillDamage);
+    return base * (1 + CONFIG.heroCommon.skillScaling.damage * (this.level - 1)) * (1 + this.stats.skillDamage);
+  }
+  skillRadius(base) { return base * (1 + CONFIG.heroCommon.skillScaling.radius * (this.level - 1)); }
+  skillDuration(base) { return base * (1 + CONFIG.heroCommon.skillScaling.duration * (this.level - 1)); }
+  levelCdr() { const sc = CONFIG.heroCommon.skillScaling; return Math.min(sc.cdrCap, sc.cdr * (this.level - 1)); }
+  skillCooldown(key) {
+    const cdr = 1 - (1 - this.levelCdr()) * (1 - this.stats.cdr);
+    return this.skillDefs[key].cd * (1 - Math.min(CONFIG.heroCommon.totalCdrCap, cdr));
+  }
+  hasMilestone(key, id) {
+    const m = (this.skillDefs[key].milestones || []).find(x => x.id === id);
+    return !!m && this.level >= m.level;
   }
 
   // ------------------------------------------------------------ orders
@@ -140,50 +146,38 @@ class Hero extends Unit {
   }
 
   // ------------------------------------------------------------ skills
-  canRankUp(key) {
-    if (this.skillPoints <= 0) return false;
-    const r = this.ranks[key];
-    if (r >= 3) return false;
-    if (key === 'R') return this.level >= CONFIG.leveling.ultLevels[r];
-    return true;
+  // Key press: 'aim' skills wait for a left-click, 'instant' fire now, 'auto' toggles autocast.
+  pressSkill(key, x, y) {
+    if (!this.alive) return;
+    const def = this.skillDefs[key];
+    if (def.cast === 'auto') { this.kit.toggleAuto(key); return; }
+    if (this.aiming === key) { this.aiming = null; return; }
+    if (this.cooldowns[key] > 0) { Sfx.play('error'); this.scene.events.emit('skillDenied', key); return; }
+    if (def.cast === 'instant') { this.aiming = null; this.tryCast(key, x, y); return; }
+    this.aiming = key;
   }
 
-  rankUp(key) {
-    if (!this.canRankUp(key)) { Sfx.play('error'); return false; }
-    this.ranks[key]++;
-    this.skillPoints--;
-    Sfx.play('click');
-    this.scene.events.emit('skillRanked', key);
-    return true;
-  }
-
-  beginSkill(key) {
-    if (!this.aiming[key]) this.aiming[key] = { t: 0 };
-  }
-
-  releaseSkill(key, x, y) {
-    if (!this.aiming[key]) return;
-    delete this.aiming[key];
+  confirmAim(x, y) {
+    const key = this.aiming;
+    if (!key) return false;
+    this.aiming = null;
     this.tryCast(key, x, y);
+    return true;
   }
 
   tryCast(key, x, y, fromBuffer = false) {
     if (!this.alive) return false;
-    const rank = this.ranks[key];
     const def = this.skillDefs[key];
     const ui = this.scene.events;
-    if (rank <= 0) { if (!fromBuffer) { Sfx.play('error'); ui.emit('notice', def.name + ' not learned (Ctrl+' + key + ')'); } return false; }
     if (this.cooldowns[key] > 0) { if (!fromBuffer) { Sfx.play('error'); ui.emit('skillDenied', key); } return false; }
-    if (this.mana < def.mana) { if (!fromBuffer) { Sfx.play('error'); ui.emit('notice', 'Not enough mana'); ui.emit('skillDenied', key); } return false; }
     if (this.stunned || this.kit.busy) {
       if (!fromBuffer) this.buffered = { key, x, y, t: CONFIG.heroCommon.skillBufferTime };
       return false;
     }
     this.cancelWindup();
-    this.mana -= def.mana;
-    const cd = (Array.isArray(def.cd) ? def.cd[rank - 1] : def.cd) * (1 - this.stats.cdr);
+    const cd = this.skillCooldown(key);
     this.cooldowns[key] = cd; this.cdMax[key] = cd;
-    this.kit.cast(key, rank, x, y);
+    this.kit.cast(key, x, y);
     if (key === 'W' && this.stats.windCloak > 0) this.windCloakT = 2;
     ui.emit('skillCast', key);
     return true;
@@ -193,6 +187,7 @@ class Hero extends Unit {
   update(dt) {
     if (!this.alive) {
       this.respawnT -= dt;
+      this.kit.update(dt);   // lingering effects (poison pools) keep ticking
       if (this.respawnT <= 0) this.respawn();
       return;
     }
@@ -201,7 +196,6 @@ class Hero extends Unit {
 
     const s = this.stats;
     this.hp = Math.min(this.maxHp, this.hp + s.hpRegen * dt);
-    this.mana = Math.min(s.maxMana, this.mana + s.manaRegen * dt);
     for (const k in this.cooldowns) {
       if (this.cooldowns[k] > 0) {
         this.cooldowns[k] -= dt;
@@ -209,7 +203,6 @@ class Hero extends Unit {
       }
     }
     if (this.windCloakT > 0) this.windCloakT -= dt;
-    for (const k in this.aiming) this.aiming[k].t += dt;
 
     this.kit.update(dt);
     if (this.kit.busy) { this.syncGfx(); return; }
@@ -331,6 +324,7 @@ class Hero extends Unit {
       if (crit) Feel.burst(tgt.x, tgt.y, 0xffd23f, 6);
       this.chainFrom(tgt, dmg);
     };
+    if (this.kit.onAttack) this.kit.onAttack(t);
     if (this.def.melee) {
       hit(t);
       Feel.arc(this.x, this.y, this.radius + this.def.range + 14, this.facing, 1.6, 0xffffff, 140);
@@ -375,10 +369,14 @@ class Hero extends Unit {
     if (this.stats.revive > 0) {
       const i = this.items.indexOf('phoenix');
       if (i >= 0) {
-        this.items[i] = null;
+        // each level is one revive; consume a level
+        const lv = (this.itemLevels.phoenix || 1) - 1;
+        const cost = CONFIG.items.phoenix.cost;
+        this.itemSpent.phoenix = Math.max(0, (this.itemSpent.phoenix || cost) - Math.round(cost * (1 + CONFIG.itemLevelCostMul * lv)));
+        if (lv <= 0) { this.items[i] = null; delete this.itemLevels.phoenix; delete this.itemSpent.phoenix; }
+        else this.itemLevels.phoenix = lv;
         this.recalcStats();
         this.hp = Math.round(this.maxHp * 0.5);
-        this.mana = this.stats.maxMana;
         Feel.ring(this.x, this.y, 140, 0xff7a2a, { duration: 600, width: 6, fill: true });
         Feel.burst(this.x, this.y, 0xff7a2a, 30);
         Feel.floatText(this.x, this.y - 30, 'REVIVED!', '#ff9a4a', 22);
@@ -389,7 +387,7 @@ class Hero extends Unit {
     }
     this.alive = false;
     this.kit.cancel();
-    this.order = null; this.path = null; this.cancelWindup(); this.buffered = null; this.aiming = {};
+    this.order = null; this.path = null; this.cancelWindup(); this.buffered = null; this.aiming = null;
     this.respawnT = CONFIG.heroCommon.respawnBase + this.level;
     this.gfx.setVisible(false);
     Feel.burst(this.x, this.y, this.color, 30);
@@ -403,7 +401,6 @@ class Hero extends Unit {
     this.x = k.rx + k.rw + 50; this.y = k.y;
     this.alive = true;
     this.hp = this.maxHp;
-    this.mana = this.stats.maxMana;
     this.status.stunT = 0; this.status.slowT = 0;
     this.kvx = 0; this.kvy = 0;
     this.gfx.setVisible(true);

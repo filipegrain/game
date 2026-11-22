@@ -3,7 +3,7 @@
 const FONT = 'Arial, Helvetica, sans-serif';
 const UI_DEPTH = { panel: 10, content: 20, window: 50, tooltip: 100 };
 const SKILL_KEYS = ['Q', 'W', 'E', 'R'];
-const BUILD_TYPES = ['wall', 'arrow', 'cannon', 'frost', 'barracks', 'mine'];
+const BUILD_TYPES = ['arrow', 'cannon', 'frost', 'barracks', 'mine'];
 
 class UIScene extends Phaser.Scene {
   constructor() { super('UIScene'); }
@@ -35,7 +35,10 @@ class UIScene extends Phaser.Scene {
     on('notice', (msg) => this.notice(msg));
     on('waveStart', (n, plan) => this.banner('WAVE ' + n, plan.bosses ? 'BOSS WAVE — ' + plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · ') : plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · '), plan.bosses ? '#ff5050' : '#ffffff'));
     on('waveCleared', (n, gold) => this.banner('WAVE ' + n + ' CLEARED', '+' + gold + ' gold', '#7cf29a'));
-    on('levelUp', (lv) => { this.banner('LEVEL ' + lv, 'Skill point available', '#ffd23f', 1200); Feel.popScale(this.portraitLevel, 1.6, 150); });
+    on('levelUp', (lv, unlocked) => {
+      this.banner('LEVEL ' + lv, unlocked && unlocked.length ? unlocked.join('\n') : 'Skills grow stronger', '#ffd23f', unlocked && unlocked.length ? 2600 : 1200);
+      Feel.popScale(this.portraitLevel, 1.6, 150);
+    });
     on('goldChanged', (amt) => { if (amt > 0) Feel.popScale(this.goldText, 1.25, 80); });
     on('keepHit', () => {
       this.vignette = Math.min(0.55, this.vignette + 0.25);
@@ -54,7 +57,7 @@ class UIScene extends Phaser.Scene {
       this.listeners = [];
     });
 
-    this.time.delayedCall(400, () => this.notice('Level 1: pick your first skill — click a + (or Ctrl/Shift+Q/W/E/R)', 5000));
+    this.time.delayedCall(400, () => this.notice('Skills: press Q/W/E/R to aim, left-click to cast (right-click / Esc cancels)', 5000));
   }
 
   // ------------------------------------------------------------------ helpers
@@ -149,7 +152,6 @@ class UIScene extends Phaser.Scene {
     // bars
     this.barsG = this.add.graphics().setDepth(UI_DEPTH.content);
     this.hpText = this.text(X + 236, Y + 20, '', 12, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5).setDepth(UI_DEPTH.content + 2);
-    this.manaText = this.text(X + 236, Y + 40, '', 11, '#ffffff').setOrigin(0.5).setDepth(UI_DEPTH.content + 2);
     this.xpText = this.text(X + 106, Y + 62, '', 10, '#d8b4fe').setOrigin(0, 0);
     this.statText = this.text(X + 106, Y + 80, '', 11, '#9ca3af');
     // skills
@@ -161,15 +163,14 @@ class UIScene extends Phaser.Scene {
       const sx = X + 386 + i * 66, sy = Y + 22;
       const def = CONFIG.skills[this.hero.heroKey][k];
       const zone = this.add.zone(sx, sy, 58, 58).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(UI_DEPTH.content);
-      zone.on('pointerdown', (p) => { if (p.leftButtonDown() && this.hero.canRankUp(k)) this.hero.rankUp(k); });
+      zone.on('pointerdown', (p) => { if (p.leftButtonDown() && def.cast === 'auto') { this.hero.kit.toggleAuto(k); this.showTip(this.skillTip(k)); } });
       zone.on('pointerover', () => this.showTip(this.skillTip(k)));
       zone.on('pointerout', () => this.hideTip());
       const keyT = this.text(sx + 4, sy + 2, k, 13, '#ffffff', { fontStyle: 'bold' }).setDepth(UI_DEPTH.content + 3);
       const nameT = this.text(sx + 29, sy + 30, def.name.split(' ')[0], 10, '#e5e7eb').setOrigin(0.5).setDepth(UI_DEPTH.content + 3);
       const cdT = this.text(sx + 29, sy + 29, '', 18, '#ffffff', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(UI_DEPTH.content + 4);
-      const manaT = this.text(sx + 55, sy + 56, String(def.mana), 10, '#93c5fd').setOrigin(1, 1).setDepth(UI_DEPTH.content + 3);
-      const plus = this.button(sx + 16, sy - 18, 26, 15, '+', () => this.hero.rankUp(k), { color: 0x8a6d00, hover: 0xb8920a, stroke: 0xffd23f, size: 12, depth: UI_DEPTH.content + 5 });
-      this.skillUI[k] = { sx, sy, keyT, nameT, cdT, manaT, plus };
+      const autoT = this.text(sx + 29, sy + 66, '', 10, '#7cf29a', { fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
+      this.skillUI[k] = { sx, sy, keyT, nameT, cdT, autoT };
     });
     // items
     this.itemG = this.add.graphics().setDepth(UI_DEPTH.content);
@@ -184,23 +185,29 @@ class UIScene extends Phaser.Scene {
       });
       zone.on('pointerover', () => {
         const key = this.hero.items[i];
-        if (key) {
-          const it = CONFIG.items[key];
-          this.showTip(it.name + '\n' + it.desc + '\n' + (this.shopOpen ? 'Click to sell for ' + Math.floor(it.cost * CONFIG.itemSellRefund) + 'g' : 'Open shop (B) to sell'));
-        } else this.showTip('Empty slot\nClick or press B to open the shop');
+        if (key) this.showTip(this.itemTip(key) + '\n' + (this.shopOpen ? 'Click to sell for ' + this.gs.shop.sellValue(key) + 'g' : 'Open shop (B) to sell or level up'));
+        else this.showTip('Empty slot\nClick or press B to open the shop');
       });
       zone.on('pointerout', () => this.hideTip());
-      this.itemSlots.push({ x: ix, y: iy });
+      const lvT = this.text(ix + 40, iy + 40, '', 11, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1).setDepth(UI_DEPTH.content + 3);
+      this.itemSlots.push({ x: ix, y: iy, lvT });
     }
   }
 
   skillTip(k) {
-    const h = this.hero, def = CONFIG.skills[h.heroKey][k], r = h.ranks[k];
-    const cd = Array.isArray(def.cd) ? def.cd.join(' / ') : def.cd;
-    let req = '';
-    if (k === 'R') req = '\nUnlocks at levels ' + CONFIG.leveling.ultLevels.join(', ');
-    return def.name + '  [' + k + ']  rank ' + r + '/3\n' + def.desc + '\nMana ' + def.mana + '   Cooldown ' + cd + 's' + req +
-      (h.canRankUp(k) ? '\n\nClick (or Ctrl/Shift+' + k + ') to rank up' : '');
+    const h = this.hero, def = CONFIG.skills[h.heroKey][k];
+    const how = { aim: 'Press ' + k + ', then left-click to cast', instant: 'Press ' + k + ' to cast', auto: 'Autocasts while attacking — ' + k + ' toggles (' + (h.kit.autoQ ? 'ON' : 'OFF') + ')' }[def.cast];
+    const sc = CONFIG.heroCommon.skillScaling, lv = h.level - 1;
+    let str = def.name + '  [' + k + ']\n' + def.desc + '\n' + how +
+      '\nCooldown ' + h.skillCooldown(k).toFixed(1) + 's' +
+      (lv > 0 ? '\nLevel bonus: +' + Math.round(sc.damage * lv * 100) + '% power, +' + Math.round(sc.radius * lv * 100) + '% area, +' + Math.round(sc.duration * lv * 100) + '% duration' : '');
+    for (const m of def.milestones || []) str += '\n' + (h.level >= m.level ? '[x] ' : '[ ] ') + 'Lv ' + m.level + ': ' + m.text;
+    return str;
+  }
+
+  itemTip(key) {
+    const it = CONFIG.items[key], lv = this.gs.shop.level(key);
+    return it.name + (lv ? '  Lv ' + lv : '') + '\n' + it.desc + (lv ? '  (×' + lv + ')' : '');
   }
 
   // ------------------------------------------------------------------ minimap
@@ -231,9 +238,9 @@ class UIScene extends Phaser.Scene {
           if (dest) Feel.clickRing(dest.x, dest.y, 0x44ff66);
           this.gs.ping(dest.x, dest.y, 0x44ff66);
         }
-      } else if (ptr.leftButtonDown()) { this.mmDrag = true; this.gs.jumpCameraTo(w.x, w.y); }
+      } else if (ptr.leftButtonDown() && this.gs.spaceHeld) { this.mmDrag = true; this.gs.jumpCameraTo(w.x, w.y); }
     });
-    zone.on('pointermove', (ptr) => { if (this.mmDrag && ptr.leftButtonDown()) { const w = toWorld(ptr); this.gs.jumpCameraTo(w.x, w.y); } });
+    zone.on('pointermove', (ptr) => { if (this.mmDrag && ptr.leftButtonDown() && this.gs.spaceHeld) { const w = toWorld(ptr); this.gs.jumpCameraTo(w.x, w.y); } });
     this.input.on('pointerup', () => { this.mmDrag = false; });
   }
 
@@ -241,7 +248,7 @@ class UIScene extends Phaser.Scene {
     const g = this.mmG, { X, Y, W, H, s } = this.mm, gs = this.gs;
     g.clear();
     for (const b of gs.buildings) {
-      g.fillStyle(b.type === 'wall' ? 0xd0d4da : b.type === 'mine' ? 0xffd23f : b.type === 'barracks' ? 0x4a8fe0 : 0xffffff, 1);
+      g.fillStyle(b.type === 'mine' ? 0xffd23f : b.type === 'barracks' ? 0x4a8fe0 : 0xffffff, 1);
       g.fillRect(X + b.tx * CONFIG.TILE * s - 0.5, Y + b.ty * CONFIG.TILE * s - 0.5, 3, 3);
     }
     g.fillStyle(0x60a5fa, 1);
@@ -274,7 +281,7 @@ class UIScene extends Phaser.Scene {
     const X = 1206, W = 68;
     this.region(X - 2, 48, W + 4, 252);
     this.colBtns = {
-      build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-6 place buildings' }),
+      build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-5 place buildings' }),
       shop: this.button(X, 110, W, 56, 'SHOP\n(B)', () => this.toggleShop(), { size: 12, tip: () => 'Item shop (B). Works anywhere, anytime.' }),
       keep: this.button(X, 170, W, 66, 'KEEP\n(U)', () => this.gs.upgradeKeep(), { size: 12, color: 0x4a3a10, hover: 0x6a5418, stroke: 0xffd23f, tip: () => this.keepTip() }),
       rally: this.button(X, 240, W, 56, 'RALLY\n(F)', () => {
@@ -297,7 +304,7 @@ class UIScene extends Phaser.Scene {
 
   createBuildPanel() {
     const X = 1126, W = 76;
-    this.buildRegion = this.region(X - 2, 48, W + 4, 6 * 62 + 4, () => this.buildOpen);
+    this.buildRegion = this.region(X - 2, 48, W + 4, BUILD_TYPES.length * 62 + 4, () => this.buildOpen);
     this.buildBtns = {};
     this.buildIconG = this.add.graphics().setDepth(UI_DEPTH.content + 2);
     BUILD_TYPES.forEach((type, i) => {
@@ -331,8 +338,7 @@ class UIScene extends Phaser.Scene {
       if (!vis) return;
       const cx = X + W / 2, cy = b.y + 22;
       const a = unlocked ? 1 : 0.35;
-      if (type === 'wall') { g.fillStyle(def.color, a); g.fillRect(cx - 12, cy - 12, 24, 24); }
-      else if (type === 'barracks') { g.fillStyle(def.color, a); g.fillRect(cx - 14, cy - 9, 28, 18); }
+      if (type === 'barracks') { g.fillStyle(def.color, a); g.fillRect(cx - 14, cy - 9, 28, 18); }
       else if (type === 'mine') { g.fillStyle(def.color, a); g.fillRect(cx - 11, cy - 11, 22, 22); }
       else { g.fillStyle(def.color, a); g.fillRect(cx - 12, cy - 12, 24, 24); g.fillStyle(def.core, a); g.fillCircle(cx, cy, 6); }
     });
@@ -352,9 +358,8 @@ class UIScene extends Phaser.Scene {
     this.selBg = this.panelBg(X, Y, W, H).setVisible(false);
     this.selTitle = this.text(X + 10, Y + 8, '', 14, '#ffd23f', { fontStyle: 'bold' }).setVisible(false);
     this.selInfo = this.text(X + 10, Y + 28, '', 11, '#cbd5e1', { lineSpacing: 2 }).setVisible(false);
-    this.selUp = this.button(X + 8, Y + 80, 66, 28, 'Upgrade', () => this.gs.build.upgradeSelected(), { size: 11, color: 0x24563a, hover: 0x2f7049, tip: () => this.selUpTip() });
-    this.selRep = this.button(X + 77, Y + 80, 64, 28, 'Repair', () => this.gs.build.repairSelected(), { size: 11, tip: () => 'Repair to full HP' });
-    this.selSell = this.button(X + 144, Y + 80, 66, 28, 'Sell', () => this.gs.build.sellSelected(), { size: 11, color: 0x5a2a2a, hover: 0x7a3a3a, tip: () => 'Sell for 50% of total invested' });
+    this.selUp = this.button(X + 8, Y + 80, 98, 28, 'Upgrade', () => this.gs.build.upgradeSelected(), { size: 11, color: 0x24563a, hover: 0x2f7049, tip: () => this.selUpTip() });
+    this.selSell = this.button(X + 112, Y + 80, 98, 28, 'Sell', () => this.gs.build.sellSelected(), { size: 11, color: 0x5a2a2a, hover: 0x7a3a3a, tip: () => 'Sell for 50% of total invested' });
     this.refreshSelection();
   }
 
@@ -364,7 +369,7 @@ class UIScene extends Phaser.Scene {
     if (s === this.gs.keep) return this.keepTip();
     if (s.level >= 3) return 'Max level';
     if (!s.canUpgradeTier()) return 'Level 3 requires Keep tier ' + CONFIG.buildings.level3KeepTier;
-    return 'Upgrade to level ' + (s.level + 1) + ' — ' + s.upgradeCost() + 'g\n+damage, +HP, +range';
+    return 'Upgrade to level ' + (s.level + 1) + ' — ' + s.upgradeCost() + 'g\n+damage, +range, +fire rate';
   }
 
   refreshSelection() {
@@ -373,7 +378,6 @@ class UIScene extends Phaser.Scene {
     [this.selBg, this.selTitle, this.selInfo].forEach(o => o.setVisible(this.selVisible));
     this.selUp.setVisible(this.selVisible);
     const isKeep = s === this.gs.keep;
-    this.selRep.setVisible(this.selVisible && !isKeep);
     this.selSell.setVisible(this.selVisible && !isKeep);
   }
 
@@ -392,16 +396,14 @@ class UIScene extends Phaser.Scene {
     }
     const d = s.def;
     this.setText(this.selTitle, 'selT', d.name + '  Lv ' + s.level);
-    let info = 'HP ' + Math.ceil(s.hp) + ' / ' + s.maxHp;
-    if (d.range) info += '\nDMG ' + Math.round(s.damage) + '  Range ' + s.range + '  Rate ' + s.rate.toFixed(1) + '/s';
-    if (s.type === 'barracks') info += '\n+' + d.allyCap[s.level - 1] + ' ally cap, spawns ×' + d.spawnMul[s.level - 1];
-    if (s.type === 'mine') info += '\n+' + d.income[s.level - 1] + ' gold per wave';
-    if (s.type === 'wall') info += '\nBlocks enemies (they reroute or break it)';
+    let info = '';
+    if (d.range) info += 'DMG ' + Math.round(s.damage) + '  Range ' + s.range + '  Rate ' + s.rate.toFixed(1) + '/s';
+    if (s.type === 'barracks') info += '+' + d.allyCap[s.level - 1] + ' ally cap, spawns ×' + d.spawnMul[s.level - 1];
+    if (s.type === 'mine') info += '+' + d.income[s.level - 1] + ' gold per wave';
+    info += '\nCannot be damaged';
     this.setText(this.selInfo, 'selI', info);
     const uc = s.upgradeCost();
     this.setText(this.selUp.txt, 'selU', uc == null ? 'Max' : (!s.canUpgradeTier() ? 'Need T4' : 'Up ' + uc + 'g'));
-    const rc = s.repairCost();
-    this.setText(this.selRep.txt, 'selR', rc > 0 ? 'Fix ' + rc + 'g' : 'Repair');
     this.setText(this.selSell.txt, 'selS', 'Sell +' + s.sellValue());
   }
 
@@ -429,17 +431,18 @@ class UIScene extends Phaser.Scene {
       const col = i % 4, row = Math.floor(i / 4);
       const ix = X + 18 + col * 148, iy = Y + 56 + row * 104;
       const r = this.add.rectangle(ix, iy, 140, 96, 0x1a2030).setOrigin(0).setStrokeStyle(2, 0x3a4252).setInteractive({ useHandCursor: true });
-      r.on('pointerdown', (p) => { if (p.leftButtonDown()) { Sfx.resume(); if (this.gs.shop.buy(key)) this.refreshShop(); } });
-      r.on('pointerover', () => { r.setStrokeStyle(2, 0xffd23f); this.showTip(it.name + ' — ' + it.cost + 'g\n' + it.desc); });
+      r.on('pointerdown', (p) => { if (p.leftButtonDown()) { Sfx.resume(); if (this.gs.shop.buy(key)) { this.refreshShop(); this.showTip(this.shopTip(key)); } } });
+      r.on('pointerover', () => { r.setStrokeStyle(2, 0xffd23f); this.showTip(this.shopTip(key)); });
       r.on('pointerout', () => { r.setStrokeStyle(2, 0x3a4252); this.hideTip(); });
       const name = this.add.text(ix + 46, iy + 10, it.name, { fontFamily: FONT, fontSize: '12px', color: '#ffffff', fontStyle: 'bold', wordWrap: { width: 90 } });
       const cost = this.add.text(ix + 46, iy + 44, it.cost + 'g', { fontFamily: FONT, fontSize: '13px', color: '#ffd23f' });
+      const lvT = this.add.text(ix + 132, iy + 44, '', { fontFamily: FONT, fontSize: '12px', color: '#7cf29a', fontStyle: 'bold' }).setOrigin(1, 0);
       const desc = this.add.text(ix + 8, iy + 64, it.desc, { fontFamily: FONT, fontSize: '10px', color: '#9ca3af', wordWrap: { width: 126 } });
-      c.add([r, name, cost, desc]);
-      this.shopItems.push({ key, r, cost, ix, iy });
+      c.add([r, name, cost, lvT, desc]);
+      this.shopItems.push({ key, r, cost, lvT, ix, iy });
     });
     c.add(iconG);
-    c.add(this.add.text(X + 20, Y + 376, 'INVENTORY — click an item to sell it for 50%', { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' }));
+    c.add(this.add.text(X + 20, Y + 376, 'INVENTORY — buy an owned item again to level it up · click an item to sell it for 50% of all spent', { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' }));
     this.shopInvG = this.add.graphics();
     c.add(this.shopInvG);
     this.shopInv = [];
@@ -447,10 +450,11 @@ class UIScene extends Phaser.Scene {
       const sx = X + 20 + i * 64, sy = Y + 398;
       const z = this.add.zone(sx, sy, 56, 56).setOrigin(0).setInteractive({ useHandCursor: true });
       z.on('pointerdown', () => { if (this.hero.items[i]) { this.gs.shop.sell(i); this.refreshShop(); this.hideTip(); } });
-      z.on('pointerover', () => { const k = this.hero.items[i]; if (k) this.showTip(CONFIG.items[k].name + '\nSell for ' + Math.floor(CONFIG.items[k].cost * CONFIG.itemSellRefund) + 'g'); });
+      z.on('pointerover', () => { const k = this.hero.items[i]; if (k) this.showTip(this.itemTip(k) + '\nSell for ' + this.gs.shop.sellValue(k) + 'g'); });
       z.on('pointerout', () => this.hideTip());
-      c.add(z);
-      this.shopInv.push({ x: sx, y: sy });
+      const lvT = this.add.text(sx + 53, sy + 54, '', { fontFamily: FONT, fontSize: '12px', color: '#ffd23f', fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1);
+      c.add([z, lvT]);
+      this.shopInv.push({ x: sx, y: sy, lvT });
     }
     c.setVisible(false);
     this.refreshShop();
@@ -463,13 +467,20 @@ class UIScene extends Phaser.Scene {
     this.hideTip();
   }
 
+  shopTip(key) {
+    const lv = this.gs.shop.level(key), cost = this.gs.shop.costOf(key);
+    return this.itemTip(key) + '\n' + (lv ? 'Level up to ' + (lv + 1) + ' — ' + cost + 'g' : 'Buy — ' + cost + 'g');
+  }
+
   refreshShop() {
-    const g = this.shopIconG;
+    const g = this.shopIconG, shop = this.gs.shop;
     g.clear();
     for (const s of this.shopItems) {
       const it = CONFIG.items[s.key];
-      const afford = this.gs.economy.canAfford(it.cost);
-      s.cost.setColor(afford ? '#ffd23f' : '#ef4444');
+      const cost = shop.costOf(s.key), lv = shop.level(s.key);
+      s.cost.setText(cost + 'g');
+      s.cost.setColor(this.gs.economy.canAfford(cost) ? '#ffd23f' : '#ef4444');
+      s.lvT.setText(lv ? 'Lv ' + lv : '');
       this.drawItemIcon(g, s.ix + 24, s.iy + 30, it, 14);
     }
     const ig = this.shopInvG;
@@ -479,6 +490,7 @@ class UIScene extends Phaser.Scene {
       ig.lineStyle(2, 0x3a4252, 1); ig.strokeRect(slot.x, slot.y, 56, 56);
       const k = this.hero.items[i];
       if (k) this.drawItemIcon(ig, slot.x + 28, slot.y + 28, CONFIG.items[k], 16);
+      slot.lvT.setText(k && shop.level(k) > 1 ? String(shop.level(k)) : '');
     });
   }
 
@@ -508,12 +520,12 @@ class UIScene extends Phaser.Scene {
     const pt = this.add.text(640, 120, 'PAUSED', { fontFamily: FONT, fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
     const help = this.add.text(640, 360, [
       'Right-click: move / attack (hold to follow cursor)      A + left-click: attack-move      S: stop',
-      'Q W E R: skills (tap = quick-cast, hold = aim, release = fire)',
-      'Ctrl/Shift + Q W E R or click "+": rank up a skill',
-      'V: build panel   1-6: place building (drag for walls)   Right-click / Esc: cancel',
-      'Left-click building or Keep: select (upgrade / repair / sell)   U: upgrade Keep',
-      'B: shop   F: rally allies (F twice: auto)   N: start next wave early',
-      'Camera: screen edges, arrow keys, middle-drag, minimap   Space: center on hero   Y: lock camera',
+      'Q W E R: aim a skill, then left-click to cast (right-click / Esc cancels). Skills grow with your level.',
+      'Self-cast skills fire on key press. Mage Fire Bolt autocasts at your attack target (Q toggles).',
+      'V: build panel   1-5: place building   Right-click / Esc: cancel',
+      'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep   Buildings cannot be damaged',
+      'B: shop (buy an item again to level it up)   F: rally allies (F twice: auto)   N: start next wave early',
+      'Camera follows the hero. Hold Space to look around (screen edges, middle-drag, minimap)',
       'P / Esc: pause   M: mute',
     ].join('\n'), { fontFamily: FONT, fontSize: '15px', color: '#e5e7eb', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
     const resume = this.button(560, 540, 160, 40, 'Resume', () => this.gs.togglePause(false), { size: 16, depth: UI_DEPTH.window + 21 });
@@ -618,10 +630,11 @@ class UIScene extends Phaser.Scene {
     let hint = '';
     if (gs.build.placing) {
       const d = CONFIG.buildings[gs.build.placing];
-      hint = 'Placing ' + d.name + ' (' + d.cost + 'g) — left-click to place' + (d.onPath ? ', drag to paint' : '') + '. Right-click / Esc to cancel.';
+      hint = 'Placing ' + d.name + ' (' + d.cost + 'g) — left-click to place. Right-click / Esc to cancel.';
       if (gs.build.ghostReason) hint += '\n' + gs.build.ghostReason;
     } else if (gs.cursorMode === 'attack') hint = 'ATTACK-MOVE: left-click a destination (right-click / Esc cancels)';
     else if (gs.cursorMode === 'rally') hint = 'RALLY: left-click where allies should go. Press F again for automatic mode.';
+    else if (h.aiming) hint = CONFIG.skills[h.heroKey][h.aiming].name.toUpperCase() + ': left-click to cast (right-click / Esc cancels)';
     this.setText(this.hintText, 'hint', hint);
 
     // death
@@ -651,14 +664,11 @@ class UIScene extends Phaser.Scene {
     const bx = X + 106, bw = 260;
     g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 12, bw, 17);
     g.fillStyle(0x22c55e, 1); g.fillRect(bx, Y + 12, bw * Math.max(0, h.hp / h.maxHp), 17);
-    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 33, bw, 14);
-    g.fillStyle(0x3b82f6, 1); g.fillRect(bx, Y + 33, bw * (h.mana / h.stats.maxMana), 14);
     const xpNeed = this.gs.leveling.xpToNext();
-    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 52, bw, 6);
-    g.fillStyle(0xa855f7, 1); g.fillRect(bx, Y + 52, bw * (h.level >= CONFIG.leveling.maxLevel ? 1 : h.xp / xpNeed), 6);
+    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 36, bw, 10);
+    g.fillStyle(0xa855f7, 1); g.fillRect(bx, Y + 36, bw * Math.min(1, h.xp / xpNeed), 10);
     this.setText(this.hpText, 'hp', Math.ceil(h.hp) + ' / ' + h.maxHp);
-    this.setText(this.manaText, 'mana', Math.floor(h.mana) + ' / ' + Math.round(h.stats.maxMana));
-    this.setText(this.xpText, 'xp', h.level >= CONFIG.leveling.maxLevel ? 'MAX LEVEL' : 'XP ' + h.xp + ' / ' + xpNeed + (h.skillPoints ? '    ' + h.skillPoints + ' skill point' + (h.skillPoints > 1 ? 's' : '') + '!' : ''));
+    this.setText(this.xpText, 'xp', 'XP ' + h.xp + ' / ' + xpNeed);
     this.setText(this.statText, 'stats', 'DMG ' + Math.round(h.stats.damage) + '   ARM ' + Math.round(h.getArmor()) + '   SPD ' + Math.round(h.moveSpeed) + '   AS ' + (h.def.attackRate * h.stats.attackSpeed).toFixed(2) + (h.stats.cdr ? '   CDR ' + Math.round(h.stats.cdr * 100) + '%' : ''));
     this.setText(this.portraitLevel, 'lvl', 'Lv ' + h.level);
 
@@ -667,9 +677,9 @@ class UIScene extends Phaser.Scene {
     sg.clear();
     for (const k of SKILL_KEYS) {
       const u = this.skillUI[k], def = CONFIG.skills[h.heroKey][k];
-      const rank = h.ranks[k], cd = h.cooldowns[k];
-      const learned = rank > 0;
-      const noMana = h.mana < def.mana;
+      const cd = h.cooldowns[k];
+      const learned = true;
+      const autoOff = def.cast === 'auto' && !h.kit.autoQ;
       this.skillPulse[k] = Math.max(0, this.skillPulse[k] - dt);
       this.skillDenied[k] = Math.max(0, this.skillDenied[k] - dt);
       const x = u.sx, y = u.sy, S = 58;
@@ -681,23 +691,18 @@ class UIScene extends Phaser.Scene {
         const frac = cd / h.cdMax[k];
         this.sweep(sg, x, y, S, frac);
       }
-      if (learned && noMana && cd <= 0) { sg.fillStyle(0x1e3a8a, 0.55); sg.fillRoundedRect(x, y, S, S, 6); }
-      if (h.aiming[k]) { sg.lineStyle(3, 0xffffff, 1); sg.strokeRoundedRect(x - 1, y - 1, S + 2, S + 2, 6); }
+      if (autoOff && cd <= 0) { sg.fillStyle(0x000000, 0.45); sg.fillRoundedRect(x, y, S, S, 6); }
+      if (h.aiming === k) { sg.lineStyle(3, 0xffffff, 1); sg.strokeRoundedRect(x - 1, y - 1, S + 2, S + 2, 6); }
       const pulse = this.skillPulse[k];
       sg.lineStyle(2, this.skillDenied[k] > 0 ? 0xef4444 : pulse > 0 ? 0xffffff : learned ? 0x5b7bb5 : 0x3a4252, 1);
       sg.strokeRoundedRect(x, y, S, S, 6);
       if (pulse > 0) { sg.lineStyle(4, 0xffffff, pulse / 0.35); sg.strokeRoundedRect(x - 4 * (1 - pulse / 0.35), y - 4 * (1 - pulse / 0.35), S + 8 * (1 - pulse / 0.35), S + 8 * (1 - pulse / 0.35), 8); }
-      // rank dots
-      for (let i = 0; i < 3; i++) {
-        sg.fillStyle(i < rank ? 0xffd23f : 0x374151, 1);
-        sg.fillCircle(x + S / 2 - 12 + i * 12, y + S + 7, 3.5);
-      }
       this.setText(u.cdT, 'cd' + k, learned && cd > 0 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : '');
       u.nameT.setAlpha(learned ? 1 : 0.4);
-      u.manaT.setColor(noMana ? '#ef4444' : '#93c5fd');
-      const can = h.canRankUp(k);
-      u.plus.setVisible(can);
-      if (can) u.plus.bg.setAlpha(0.7 + 0.3 * Math.sin(this.time.now / 150));
+      if (def.cast === 'auto') {
+        this.setText(u.autoT, 'auto' + k, autoOff ? 'AUTO OFF' : 'AUTO');
+        u.autoT.setColor(autoOff ? '#ef4444' : '#7cf29a');
+      }
     }
 
     // items
@@ -708,6 +713,8 @@ class UIScene extends Phaser.Scene {
       ig.lineStyle(1.5, this.shopOpen ? 0x8a6d00 : 0x3a4252, 1); ig.strokeRect(s.x, s.y, 42, 42);
       const key = h.items[i];
       if (key) this.drawItemIcon(ig, s.x + 21, s.y + 21, CONFIG.items[key], 12);
+      const lv = key ? this.gs.shop.level(key) : 0;
+      this.setText(s.lvT, 'ilv' + i, lv > 1 ? String(lv) : '');
     });
   }
 
@@ -738,8 +745,8 @@ class UIScene extends Phaser.Scene {
       },
       mage: {
         Q: () => { g.fillStyle(0xff7a2a, 1); g.fillCircle(x + 4, y, 7); g.fillStyle(0xffd23f, 1); g.fillTriangle(x - 3, y - 5, x - 15, y, x - 3, y + 5); },
-        W: () => { g.fillStyle(0xc4b5fd, 0.4); g.fillCircle(x - 7, y, 6); g.fillStyle(0xc4b5fd, 1); g.fillCircle(x + 7, y, 7); },
-        E: () => { g.lineStyle(3, 0x5ee0ff, 1); g.strokeCircle(x, y, 12); g.fillStyle(0x9fe9ff, 1); g.fillCircle(x, y, 4); },
+        W: () => { g.fillStyle(0x4f9a2a, 1); g.fillEllipse(x, y + 4, 30, 14); g.fillStyle(0x9be86a, 1); g.fillCircle(x - 6, y + 2, 3); g.fillCircle(x + 5, y - 3, 4); g.fillCircle(x + 1, y - 9, 2.5); },
+        E: () => { g.lineStyle(3, 0x9fe9ff, 1); for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; g.lineBetween(x - Math.cos(a) * 13, y - Math.sin(a) * 13, x + Math.cos(a) * 13, y + Math.sin(a) * 13); } g.fillStyle(0xffffff, 1); g.fillCircle(x, y, 3); },
         R: () => { g.fillStyle(0xff5030, 1); g.fillCircle(x - 6, y + 4, 5); g.fillCircle(x + 6, y - 2, 6); g.fillCircle(x, y - 10, 4); },
       },
     };

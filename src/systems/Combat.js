@@ -8,7 +8,7 @@ const Combat = {
 
   // opts: { source, melee, crit, skill, knock: {x, y, force}, structureMul, noNumber, lifesteal, color, isAttack }
   dealDamage(target, amount, opts = {}) {
-    if (!target || !target.alive || target.invulnerable) return 0;
+    if (!target || !target.alive || target.invulnerable || target.isBuilding) return 0;   // buildings are immune
     const armor = target.getArmor ? target.getArmor() : (target.armor || 0);
     let dmg = amount * this.armorMul(armor);
     if (target.isStructure && opts.structureMul) dmg *= opts.structureMul;
@@ -69,9 +69,9 @@ const Combat = {
     return out;
   },
 
+  // Damageable structures (only the Keep: buildings are immune)
   structuresInRadius(x, y, r) {
     const out = [];
-    for (const b of this.scene.buildings) if (b.alive && b.edgeDist(x, y) <= r) out.push(b);
     const k = this.scene.keep;
     if (k.alive && k.edgeDist(x, y) <= r) out.push(k);
     return out;

@@ -1,6 +1,6 @@
 # Castle Defense
 
-A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build walls and towers, upgrade your Keep, buy items, and hold off endless waves that come down three connected lanes. The run ends when the Keep falls.
+A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build towers, upgrade your Keep, buy items, and hold off endless waves that come down three connected lanes. The run ends when the Keep falls.
 
 All visuals are drawn shapes and all sounds are synthesized. The game uses no image or audio assets.
 
@@ -25,23 +25,21 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 | Right-click | Move (hold to keep following the cursor) / attack a clicked enemy |
 | A + left-click | Attack-move |
 | S | Stop |
-| Q / W / E / R | Cast skill at the cursor (hold to see the aim indicator, release to cast) |
-| Ctrl/Shift + Q/W/E/R | Spend a skill point |
+| Q / W / E / R | Aim a skill, then left-click to cast at the cursor (right-click / Esc / same key cancels). War Cry casts on key press. Mage Q toggles Fire Bolt autocast |
 
 **Camera**
 | Input | Action |
 |---|---|
-| Mouse at screen edge / arrow keys / middle-drag | Pan |
-| Space | Tap to jump to the hero, hold to follow |
-| Y | Toggle camera lock on the hero |
-| Minimap | Left-click to jump the camera, right-click to move the hero |
+| (default) | Locked on the hero (on the Keep while the hero is dead) |
+| Hold Space | Look around: screen edges, middle-drag, or left-click the minimap |
+| Minimap | Right-click to move the hero |
 
 **Base & economy**
 | Input | Action |
 |---|---|
 | V | Toggle the build panel |
-| 1–6 | Place Wall / Arrow Tower / Cannon / Frost Tower / Barracks / Gold Mine |
-| Left-click a building | Select it (upgrade, repair, sell) |
+| 1–5 | Place Arrow Tower / Cannon / Frost Tower / Barracks / Gold Mine |
+| Left-click a building | Select it (upgrade, sell) |
 | U | Upgrade the Keep |
 | B | Toggle the shop |
 | F | Rally allies to a spot (press F twice to return them to auto mode) |
@@ -52,10 +50,10 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 ## How it plays
 
 - **Waves:** a build-phase countdown comes before each wave. Starting early pays bonus gold. Every fifth wave includes a boss, and the waves scale forever.
-- **Lanes:** walls fully block a lane. Enemies then reroute through the always-open connectors, or attack the wall if the detour is too long.
+- **Buildings** can't be damaged; enemies only fight the hero, allies and the Keep. Sappers ignore everything and rush the Keep.
 - **Keep tiers (1–4):** each tier adds HP and more allies, unlocks new buildings, and later gives the Keep its own attack and auto-repair.
-- **Leveling:** the hero reaches level 12 at most. Q/W/E have 3 ranks each, and R ranks unlock at levels 4, 8 and 12.
-- **Shop:** 6 item slots. You can buy anytime, anywhere, and items sell back for 50%.
+- **Leveling:** no level cap. All skills are available from the start, grow stronger every level, and unlock extra effects at milestone levels. There is no mana, only cooldowns.
+- **Shop:** 6 item slots, one per item type. Buy an item again to level it up. You can buy anytime, anywhere, and items sell back for 50% of what you spent.
 - **Score:** based on waves, kills, hero level and time. The best score for each difficulty is saved in your browser.
 
 ## Development

@@ -1,4 +1,4 @@
-// Grid buildings: walls, towers, barracks, gold mines.
+// Grid buildings: towers, barracks, gold mines. Immune to damage (enemies ignore them).
 
 class Building {
   constructor(scene, type, tx, ty) {
@@ -10,17 +10,13 @@ class Building {
     this.x = tx * T + T / 2; this.y = ty * T + T / 2;
     this.radius = T / 2;
     this.level = 1;
-    this.maxHp = this.def.hp; this.hp = this.maxHp;
     this.invested = this.def.cost;
     this.alive = true;
     this.isStructure = true;
+    this.isBuilding = true;
     this.team = 'player';
-    this.armor = type === 'wall' ? 4 : 2;
     this.cd = 0.3;
-    this.flashT = 0;
-    const p = scene.pathing;
-    this.adjLane = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => p.isLane(tx + dx, ty + dy)) || p.isLane(tx, ty);
-    this.gfx = scene.add.graphics().setDepth(type === 'wall' ? 12 : 14).setPosition(this.x, this.y);
+    this.gfx = scene.add.graphics().setDepth(14).setPosition(this.x, this.y);
     this.redraw();
     Feel.popScale(this.gfx, 1.25, 100);
   }
@@ -29,17 +25,11 @@ class Building {
   get damage() { return (this.def.damage || 0) * CONFIG.buildings.levelMul.damage[this.level - 1]; }
   get rate() { return (this.def.rate || 0) * CONFIG.buildings.levelMul.rate[this.level - 1]; }
 
-  redraw(flashColor) {
+  redraw() {
     const g = this.gfx, d = this.def, h = CONFIG.TILE / 2;
     g.clear();
-    const base = flashColor != null ? flashColor : d.color;
-    if (this.type === 'wall') {
-      g.fillStyle(base, 1); g.fillRect(-h + 1, -h + 1, h * 2 - 2, h * 2 - 2);
-      g.lineStyle(2, 0x4a4f58, 1); g.strokeRect(-h + 1, -h + 1, h * 2 - 2, h * 2 - 2);
-      g.lineStyle(1, 0x5f646d, 1);
-      g.lineBetween(-h + 2, -4, h - 2, -4); g.lineBetween(-h + 2, 6, h - 2, 6);
-      g.lineBetween(-2, -h + 2, -2, -4); g.lineBetween(6, -4, 6, 6); g.lineBetween(-6, 6, -6, h - 2);
-    } else if (this.type === 'barracks') {
+    const base = d.color;
+    if (this.type === 'barracks') {
       g.fillStyle(base, 1); g.fillRect(-h + 1, -h + 5, h * 2 - 2, h * 2 - 10);
       g.lineStyle(2, 0x173a70, 1); g.strokeRect(-h + 1, -h + 5, h * 2 - 2, h * 2 - 10);
       g.fillStyle(0xffffff, 0.8); g.fillRect(-3, -3, 6, 9);
@@ -50,7 +40,7 @@ class Building {
     } else {
       g.fillStyle(base, 1); g.fillRect(-h + 2, -h + 2, h * 2 - 4, h * 2 - 4);
       g.lineStyle(2, 0x2a2f38, 1); g.strokeRect(-h + 2, -h + 2, h * 2 - 4, h * 2 - 4);
-      g.fillStyle(flashColor != null ? flashColor : d.core, 1); g.fillCircle(0, 0, 6 + this.level);
+      g.fillStyle(d.core, 1); g.fillCircle(0, 0, 6 + this.level);
     }
     // level pips
     g.fillStyle(0xffd23f, 1);
@@ -65,15 +55,8 @@ class Building {
     return Math.hypot(x - cx, y - cy);
   }
 
-  onDamaged() {
-    this.flashT = 0.08;
-    this.redraw(0xffffff);
-    if (Math.random() < 0.3) Feel.burst(this.x, this.y, 0x9aa0aa, 3);
-  }
-
   update(dt) {
     if (!this.alive) return;
-    if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.redraw(); }
     if (!this.def.range) return;
     this.cd -= dt;
     if (this.cd > 0) return;
@@ -132,26 +115,11 @@ class Building {
     const cost = this.upgradeCost();
     this.invested += cost;
     this.level++;
-    const ratio = this.hp / this.maxHp;
-    this.maxHp = Math.round(this.def.hp * CONFIG.buildings.levelMul.hp[this.level - 1]);
-    this.hp = Math.round(this.maxHp * Math.max(ratio, 0.5) + 0.5);
-    this.hp = Math.min(this.hp, this.maxHp);
     this.redraw();
     Feel.popScale(this.gfx, 1.35, 120);
     Feel.burst(this.x, this.y, 0xffd23f, 12);
-    if (this.type === 'wall') this.scene.pathing.computeFlowField();
   }
-  repairCost() { return Math.ceil((this.maxHp - this.hp) * CONFIG.buildings.repairCostPerHp); }
   sellValue() { return Math.floor(this.invested * CONFIG.buildings.sellRefund); }
-
-  die() {
-    if (!this.alive) return;
-    this.alive = false;
-    Feel.burst(this.x, this.y, 0x9aa0aa, 16);
-    Feel.shake(0.004, 120);
-    Sfx.play('explode');
-    this.scene.removeBuilding(this, true);
-  }
 
   destroy() {
     this.alive = false;

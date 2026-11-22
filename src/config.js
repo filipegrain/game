@@ -8,10 +8,9 @@ const CONFIG = {
   VIEW_W: 1280,
   VIEW_H: 720,
 
-  camera: {
-    edgeSize: 14,       // px from the screen edge that triggers edge pan
+  camera: {             // locked on the hero; hold Space to look around
+    edgeSize: 14,       // px from the screen edge that triggers edge pan (Space held)
     edgeSpeed: 1100,    // px/s
-    keySpeed: 1100,     // px/s (arrow keys)
     smoothing: 16,      // higher = snappier camera follow
   },
 
@@ -78,7 +77,7 @@ const CONFIG = {
     runner: { name: 'Runner', shape: 'triangle', color: 0xff5a5a, radius: 9,  hp: 40,   speed: 155, damage: 6,  range: 20,  rate: 1.4, armor: 0, aggro: 140, gold: 4,   xp: 10 },
     brute:  { name: 'Brute',  shape: 'square',   color: 0x8b1a1a, radius: 16, hp: 280,  speed: 58,  damage: 26, range: 24,  rate: 0.7, armor: 6, aggro: 150, gold: 14,  xp: 30 },
     archer: { name: 'Archer', shape: 'diamond',  color: 0xe0505a, radius: 10, hp: 55,   speed: 84,  damage: 10, range: 220, rate: 0.8, armor: 0, aggro: 240, gold: 7,   xp: 15, ranged: true, projSpeed: 520 },
-    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 95,   speed: 86,  damage: 12, range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 9,   xp: 18, structureMul: 4, buildingAggro: 220 },
+    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 95,   speed: 86,  damage: 12, range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 9,   xp: 18, structureMul: 4, keepBreaker: true },   // ignores hero/allies, rushes the Keep
     shaman: { name: 'Shaman', shape: 'circle',   color: 0x9b4dca, radius: 12, hp: 120,  speed: 70,  damage: 8,  range: 180, rate: 0.7, armor: 1, aggro: 200, gold: 12,  xp: 25, ranged: true, projSpeed: 420,
               healEvery: 2.5, healRadius: 170, healPct: 0.08, hasteMul: 1.25, hasteTime: 3 },
     boss:   { name: 'Boss',   shape: 'hexagon',  color: 0xc81e1e, radius: 30, hp: 2600, speed: 46,  damage: 55, range: 30,  rate: 0.6, armor: 8, aggro: 200, gold: 150, xp: 300,
@@ -89,18 +88,18 @@ const CONFIG = {
   heroes: {
     warrior: {
       name: 'Warrior', color: 0x3b82f6, radius: 15,
-      hp: 620, hpRegen: 3, mana: 200, manaRegen: 5,
+      hp: 620, hpRegen: 3,
       damage: 34, attackRate: 1.0, windup: 0.16, range: 34, armor: 5,
       speed: 270, accel: 9000, acquireRange: 220,
-      perLevel: { hp: 62, damage: 3.5, mana: 15, armor: 0.6 },
+      perLevel: { hp: 62, damage: 3.5, armor: 0.6 },
       melee: true,
     },
     mage: {
       name: 'Mage', color: 0xa855f7, radius: 13,
-      hp: 400, hpRegen: 2, mana: 320, manaRegen: 9,
+      hp: 400, hpRegen: 2,
       damage: 26, attackRate: 0.9, windup: 0.14, range: 360, armor: 1,
       speed: 275, accel: 9000, acquireRange: 400,
-      perLevel: { hp: 36, damage: 2.6, mana: 26, armor: 0.3 },
+      perLevel: { hp: 36, damage: 2.6, armor: 0.3 },
       melee: false, projSpeed: 820,
     },
   },
@@ -110,41 +109,52 @@ const CONFIG = {
     respawnBase: 5,          // respawn = base + level seconds
     xpRadius: 900,           // kills within this distance give XP
     skillBufferTime: 0.4,    // s a skill press is remembered while the hero is busy
-    indicatorDelay: 0.12,    // hold the key this long to see the aim indicator
-    skillLevelScaling: 0.04, // skill damage +4% per hero level
+    // Skills scale with hero level (per level above 1)
+    skillScaling: { damage: 0.08, radius: 0.015, duration: 0.025, cdr: 0.015, cdrCap: 0.3 },
+    totalCdrCap: 0.6,        // level cdr + item cdr combined
   },
 
+  // cast: 'aim' = key then left-click at the cursor, 'instant' = fires on key press, 'auto' = autocast (key toggles)
+  // damage/dps scale with skillScaling.damage, radius with .radius, durations with .duration.
+  // milestones unlock extra effects at a hero level.
   skills: {
     warrior: {
-      Q: { name: 'Cleave', mana: 30, cd: [4, 3.5, 3], damage: [60, 95, 135], radius: [115, 125, 135], arc: [100, 125, 150],
-           knock: 340, bleedDps: [0, 0, 22], bleedTime: 3,
-           desc: 'Wide arc slash in front. Damage + knockback. Rank 3: bleed.' },
-      W: { name: 'Charge', mana: 40, cd: [9, 8, 7], damage: [50, 80, 115], range: [300, 340, 380], speed: 1500, width: 22,
-           desc: 'Dash toward the cursor, damaging and pushing enemies. Rank 3: resets on kill.' },
-      E: { name: 'War Cry', mana: 50, cd: [16, 14, 12], radius: [260, 280, 300], taunt: [2, 2.5, 3], armor: [10, 15, 20], buffTime: 4,
-           allyAtkSpeed: [0.3, 0.4, 0.5], allyBuffTime: 5,
+      Q: { name: 'Cleave', cast: 'aim', cd: 4, damage: 60, radius: 115, arc: 100,
+           knock: 340, bleedDps: 22, bleedTime: 3,
+           milestones: [{ id: 'bleed', level: 5, text: 'Enemies hit bleed for 3s' }],
+           desc: 'Wide arc slash toward the cursor. Damage + knockback.' },
+      W: { name: 'Charge', cast: 'aim', cd: 9, damage: 50, range: 300, speed: 1500, width: 22,
+           milestones: [{ id: 'reset', level: 8, text: 'Cooldown resets on kill' }],
+           desc: 'Dash toward the cursor, damaging and pushing enemies.' },
+      E: { name: 'War Cry', cast: 'instant', cd: 16, radius: 260, taunt: 2, armor: 10, buffTime: 4,
+           allyAtkSpeed: 0.3, allyBuffTime: 5, milestones: [],
            desc: 'Taunt nearby enemies, gain armor. Nearby allies attack faster.' },
-      R: { name: 'Earthshatter', mana: 100, cd: [60, 50, 40], damage: [200, 320, 460], radius: [170, 190, 215], range: 460, stun: [1.2, 1.5, 1.8], leapTime: 0.45,
-           desc: 'Leap to a spot and slam down: big AoE damage, stun and a shockwave.' },
+      R: { name: 'Earthshatter', cast: 'aim', cd: 60, damage: 200, radius: 170, range: 460, stun: 1.2, leapTime: 0.45,
+           shockwaveMul: 0.5, shockwaveRadiusMul: 1.7, shockwaveDelay: 0.22,
+           milestones: [{ id: 'shockwave', level: 10, text: 'A second shockwave ring hits farther out (50% dmg)' }],
+           desc: 'Leap to a spot and slam down: big AoE damage and stun.' },
     },
     mage: {
-      Q: { name: 'Fire Bolt', mana: 25, cd: [2.5, 2.2, 1.8], damage: [55, 85, 125], aoe: [70, 80, 90], pierce: [0, 1, 2], speed: 950, range: 760,
-           desc: 'Fast bolt that explodes on hit. Rank 2+: pierces.' },
-      W: { name: 'Blink', mana: 40, cd: [8, 6.5, 5], range: [300, 350, 400], burstDamage: [30, 50, 70], burstRadius: 95, burstSlow: 0.6, burstSlowTime: 1.5,
-           desc: 'Teleport toward the cursor. Leaves a frost burst behind.' },
-      E: { name: 'Frost Nova', mana: 60, cd: [12, 11, 10], damage: [60, 95, 135], radius: [180, 200, 225], slow: 0.5, slowTime: 2.5, freeze: [0, 0, 1.2],
-           desc: 'Frost ring around you that slows and damages. Rank 3: freezes.' },
-      R: { name: 'Meteor Storm', mana: 120, cd: [60, 50, 40], damage: [90, 135, 180], meteors: [6, 9, 12], radius: 200, meteorRadius: 72, range: 620, duration: 3, warn: 0.6,
+      Q: { name: 'Fire Bolt', cast: 'auto', cd: 4, damage: 55, aoe: 70, speed: 950, range: 760,
+           milestones: [{ id: 'pierce1', level: 4, text: 'Pierces 1 enemy' }, { id: 'pierce2', level: 8, text: 'Pierces 2 enemies' }],
+           desc: 'Autocasts at the enemy you are attacking. Explodes on hit. Q toggles autocast.' },
+      W: { name: 'Poison Pool', cast: 'aim', cd: 9, dps: 30, radius: 110, duration: 5, range: 450, tick: 0.5, slow: 0.7,
+           milestones: [{ id: 'slow', level: 6, text: 'Pool also slows enemies by 30%' }],
+           desc: 'Poison the ground at the cursor: damage per second to enemies inside.' },
+      E: { name: 'Deep Freeze', cast: 'aim', cd: 12, damage: 30, radius: 160, range: 500, freeze: 1.5, shatterDamage: 60,
+           milestones: [{ id: 'shatter', level: 10, text: 'Frozen enemies shatter when the freeze ends' }],
+           desc: 'Freeze enemies in an area at the cursor, rooting them in place.' },
+      R: { name: 'Meteor Storm', cast: 'aim', cd: 60, damage: 90, meteors: 6, radius: 200, meteorRadius: 72, range: 620, duration: 3, warn: 0.6,
+           bonusMeteorMul: 1.5,
+           milestones: [{ id: 'more', level: 10, text: '+50% meteors' }],
            desc: 'Meteors rain on an area over 3s. Each one is telegraphed.' },
     },
   },
 
   // ---------------------------------------------------------------- LEVELING
-  leveling: {
-    maxLevel: 12,
+  leveling: {                      // no max level
     xpToNext: [100, 160, 230, 310, 400, 500, 610, 730, 860, 1000, 1150],
-    ultLevels: [4, 8, 12],
-    basicMaxRank: 3,
+    xpGrowth: 1.15,                 // past the table, each level needs this × the previous
   },
 
   // ---------------------------------------------------------------- KEEP & ALLIES
@@ -167,24 +177,20 @@ const CONFIG = {
 
   // ---------------------------------------------------------------- BUILDINGS
   buildings: {
-    wall:   { name: 'Wall',        key: '1', cost: 20,  hp: 450, color: 0x8a8f98, core: null,     tier: 1, onPath: true,
-              desc: 'Cheap, high HP. Fully blocks enemies.' },
-    arrow:  { name: 'Arrow Tower', key: '2', cost: 100, hp: 300, color: 0x5a6270, core: 0xffffff, tier: 1,
+    arrow:  { name: 'Arrow Tower', key: '1', cost: 100, color: 0x5a6270, core: 0xffffff, tier: 1,
               range: 230, damage: 18, rate: 1.6, projSpeed: 750, desc: 'Fast single-target arrows.' },
-    cannon: { name: 'Cannon',      key: '3', cost: 175, hp: 360, color: 0x5a6270, core: 0xff9a3c, tier: 2,
+    cannon: { name: 'Cannon',      key: '2', cost: 175, color: 0x5a6270, core: 0xff9a3c, tier: 2,
               range: 260, damage: 48, rate: 0.45, aoe: 70, projSpeed: 480, desc: 'Slow, heavy AoE shots.' },
-    frost:  { name: 'Frost Tower', key: '4', cost: 150, hp: 300, color: 0x5a6270, core: 0x5ee0ff, tier: 3,
+    frost:  { name: 'Frost Tower', key: '3', cost: 150, color: 0x5a6270, core: 0x5ee0ff, tier: 3,
               range: 200, damage: 9, rate: 1.0, aoe: 55, slow: 0.55, slowTime: 1.5, projSpeed: 620, desc: 'Slows enemies in a small area.' },
-    barracks: { name: 'Barracks',  key: '5', cost: 200, hp: 520, color: 0x2f5fa8, core: null,     tier: 2,
+    barracks: { name: 'Barracks',  key: '4', cost: 200, color: 0x2f5fa8, core: null,     tier: 2,
               allyCap: [2, 3, 4], spawnMul: [0.85, 0.75, 0.65], desc: '+Ally cap and faster ally spawns.' },
-    mine:   { name: 'Gold Mine',   key: '6', cost: 150, hp: 260, color: 0xd8b21c, core: null,     tier: 3,
+    mine:   { name: 'Gold Mine',   key: '5', cost: 150, color: 0xd8b21c, core: null,     tier: 3,
               income: [25, 45, 70], desc: 'Gold every time a wave is cleared.' },
-    levelMul: { damage: [1, 1.6, 2.4], hp: [1, 1.5, 2.2], range: [0, 20, 40], rate: [1, 1.1, 1.2] },
+    levelMul: { damage: [1, 1.6, 2.4], range: [0, 20, 40], rate: [1, 1.1, 1.2] },
     upgradeCostMul: [0.8, 1.2],   // cost of level 2, level 3 (× base cost)
     level3KeepTier: 4,
     sellRefund: 0.5,
-    repairCostPerHp: 0.12,
-    wallPathCost: 25,             // flow field cost of a wall tile (+ hp/40)
   },
 
   // ---------------------------------------------------------------- ITEMS
@@ -193,18 +199,21 @@ const CONFIG = {
     gloves:  { name: 'Swift Gloves',    cost: 250, color: 0xf2c14e, shape: 'circle',   stats: { attackSpeed: 0.2 },         desc: '+20% attack speed' },
     boots:   { name: 'Leather Boots',   cost: 200, color: 0x9a6b3f, shape: 'square',   stats: { speed: 35 },                desc: '+35 move speed' },
     plate:   { name: 'Plate Armor',     cost: 450, color: 0x7d8696, shape: 'square',   stats: { armor: 8, hp: 150 },        desc: '+8 armor, +150 HP' },
-    crystal: { name: 'Mana Crystal',    cost: 300, color: 0x3fa3ff, shape: 'diamond',  stats: { mana: 100, manaRegen: 3 },  desc: '+100 mana, +3 mana/s' },
+    heart:   { name: 'Heart Crystal',   cost: 300, color: 0xff5a7a, shape: 'diamond',  stats: { hp: 120, hpRegen: 4 },     desc: '+120 HP, +4 HP/s' },
     hourglass: { name: 'Hourglass',     cost: 600, color: 0xe8d9a0, shape: 'hexagon',  stats: { cdr: 0.15 },                desc: '-15% cooldowns' },
     fang:    { name: 'Vampire Fang',    cost: 550, color: 0xb0213a, shape: 'triangle', stats: { lifesteal: 0.15 },          desc: '15% lifesteal on attacks' },
     storm:   { name: 'Storm Blade',     cost: 900, color: 0x7ee8ff, shape: 'diamond',  stats: { damage: 8, chain: 2 },      desc: 'Attacks chain to 2 more enemies (60%)' },
     thorns:  { name: 'Thorn Mail',      cost: 750, color: 0x4f8a3a, shape: 'hexagon',  stats: { armor: 5, thorns: 0.35 },   desc: '+5 armor, reflect 35% melee damage' },
-    phoenix: { name: 'Phoenix Feather', cost: 800, color: 0xff7a2a, shape: 'triangle', stats: { revive: 1 },                desc: 'Auto-revive once (consumed)' },
+    phoenix: { name: 'Phoenix Feather', cost: 800, color: 0xff7a2a, shape: 'triangle', stats: { revive: 1 },                desc: 'Auto-revive once per level (consumes a level)' },
     focus:   { name: 'Arcane Focus',    cost: 700, color: 0xc77dff, shape: 'circle',   stats: { skillDamage: 0.25 },        desc: '+25% skill damage' },
     cloak:   { name: 'Wind Cloak',      cost: 450, color: 0x9be8c9, shape: 'diamond',  stats: { speed: 15, windCloak: 0.4 },desc: '+15 speed. After W: +40% speed for 2s' },
   },
-  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'crystal', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak'],
+  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'heart', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak'],
   inventorySlots: 6,
   itemSellRefund: 0.5,
+  // Buying an owned item levels it up: stats add again each level.
+  itemLevelCostMul: 0.5,    // next level costs base × (1 + this × current level)
+  itemCaps: { cdr: 0.4, lifesteal: 0.5 },
 
   // ---------------------------------------------------------------- FEEL
   feel: {

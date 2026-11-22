@@ -20,28 +20,31 @@ class WarriorKit {
 
   aimAngle(x, y) { return Math.atan2(y - this.hero.y, x - this.hero.x); }
 
-  cast(key, rank, x, y) {
-    const h = this.hero, i = rank - 1;
-    if (key === 'Q') this.cleave(i, x, y);
-    else if (key === 'W') this.charge(i, x, y);
-    else if (key === 'E') this.warCry(i);
-    else if (key === 'R') this.earthshatter(i, x, y);
+  toggleAuto() { }
+
+  cast(key, x, y) {
+    const h = this.hero;
+    if (key === 'Q') this.cleave(x, y);
+    else if (key === 'W') this.charge(x, y);
+    else if (key === 'E') this.warCry();
+    else if (key === 'R') this.earthshatter(x, y);
     h.order = null; h.path = null;
   }
 
   // ---------------------------------------------------------------- Q
-  cleave(i, x, y) {
+  cleave(x, y) {
     const h = this.hero, s = this.S.Q;
     const ang = this.aimAngle(x, y);
     h.facing = ang;
-    const r = s.radius[i], arc = s.arc[i] * Math.PI / 180;
-    const dmg = h.skillDamage(s.damage[i] + h.stats.damage * 0.5);
+    const r = h.skillRadius(s.radius), arc = s.arc * Math.PI / 180;
+    const dmg = h.skillDamage(s.damage + h.stats.damage * 0.5);
+    const bleed = h.hasMilestone('Q', 'bleed');
     let hits = 0;
     for (const e of Combat.enemiesInRadius(h.x, h.y, r)) {
       const a = Math.atan2(e.y - h.y, e.x - h.x);
       if (Math.abs(Combat.angleDiff(ang, a)) > arc / 2 + 0.15) continue;
       Combat.dealDamage(e, dmg, { source: h, skill: true, knock: { x: e.x - h.x, y: e.y - h.y, force: s.knock } });
-      if (e.alive && s.bleedDps[i] > 0) e.applyBleed(h.skillDamage(s.bleedDps[i]), s.bleedTime);
+      if (e.alive && bleed) e.applyBleed(h.skillDamage(s.bleedDps), h.skillDuration(s.bleedTime));
       Feel.burst(e.x, e.y, 0xffffff, 4);
       hits++;
     }
@@ -52,29 +55,31 @@ class WarriorKit {
   }
 
   // ---------------------------------------------------------------- W
-  charge(i, x, y) {
+  charge(x, y) {
     const h = this.hero, s = this.S.W;
     const dx = x - h.x, dy = y - h.y;
     const d = Math.hypot(dx, dy) || 1;
-    const dist = Math.max(120, Math.min(s.range[i], d));
-    this.dash = { dirx: dx / d, diry: dy / d, left: dist, hit: new Set(), dmg: h.skillDamage(s.damage[i] + h.stats.damage * 0.4), kills: 0, rank: i + 1, trailT: 0, impact: false };
+    const dist = Math.max(120, Math.min(h.skillRadius(s.range), d));
+    this.dash = { dirx: dx / d, diry: dy / d, left: dist, hit: new Set(), dmg: h.skillDamage(s.damage + h.stats.damage * 0.4), kills: 0, reset: h.hasMilestone('W', 'reset'), trailT: 0, impact: false };
     h.facing = Math.atan2(dy, dx);
     Sfx.play('dash');
   }
 
   // ---------------------------------------------------------------- E
-  warCry(i) {
+  warCry() {
     const h = this.hero, s = this.S.E;
-    const r = s.radius[i];
+    const r = h.skillRadius(s.radius);
+    const taunt = h.skillDuration(s.taunt);
+    const lvMul = h.skillDamage(1) / (1 + h.stats.skillDamage);   // level growth only
     let n = 0;
     for (const e of Combat.enemiesInRadius(h.x, h.y, r)) {
-      e.status.tauntT = s.taunt[i]; e.status.tauntBy = h; e.target = h; e.retargetT = s.taunt[i];
+      e.status.tauntT = taunt; e.status.tauntBy = h; e.target = h; e.retargetT = taunt;
       n++;
     }
-    h.status.armorBonus = s.armor[i]; h.status.armorT = s.buffTime;
+    h.status.armorBonus = s.armor * lvMul; h.status.armorT = h.skillDuration(s.buffTime);
     for (const a of this.scene.allies) {
       if (!a.alive || Math.hypot(a.x - h.x, a.y - h.y) > r) continue;
-      a.status.atkSpeedBonus = s.allyAtkSpeed[i]; a.status.atkSpeedT = s.allyBuffTime;
+      a.status.atkSpeedBonus = s.allyAtkSpeed * lvMul; a.status.atkSpeedT = h.skillDuration(s.allyBuffTime);
       Feel.burst(a.x, a.y, 0xffb347, 4);
     }
     Feel.ring(h.x, h.y, r, 0xffb347, { duration: 450, width: 6, fill: true });
@@ -86,14 +91,14 @@ class WarriorKit {
   }
 
   // ---------------------------------------------------------------- R
-  earthshatter(i, x, y) {
+  earthshatter(x, y) {
     const h = this.hero, s = this.S.R;
     let dx = x - h.x, dy = y - h.y;
     const d = Math.hypot(dx, dy);
     if (d > s.range) { dx = dx / d * s.range; dy = dy / d * s.range; }
     const dest = this.scene.pathing.nearestWalkable(h.x + dx, h.y + dy, h.radius);
     const g = this.scene.add.graphics().setDepth(8);
-    this.leap = { sx: h.x, sy: h.y, ex: dest.x, ey: dest.y, t: 0, dur: s.leapTime, i, g, trailT: 0 };
+    this.leap = { sx: h.x, sy: h.y, ex: dest.x, ey: dest.y, t: 0, dur: s.leapTime, r: h.skillRadius(s.radius), g, trailT: 0 };
     h.invulnerable = true;
     h.facing = Math.atan2(dest.y - h.y, dest.x - h.x);
     Sfx.play('swoosh');
@@ -127,7 +132,7 @@ class WarriorKit {
       if (!D.impact) { D.impact = true; Feel.hitstop(CONFIG.feel.hitstop.charge); Feel.shake(0.006, 110); Sfx.play('hit'); }
     }
     if (D.left <= 0.5 || (bumped && moved < step * 0.3)) {
-      if (D.rank >= 3 && D.kills > 0) {
+      if (D.reset && D.kills > 0) {
         h.cooldowns.W = 0;
         Feel.floatText(h.x, h.y - 30, 'RESET!', '#9cc8ff', 16, 600);
         this.scene.events.emit('skillReady', 'W');
@@ -150,7 +155,7 @@ class WarriorKit {
     L.trailT -= dt;
     if (L.trailT <= 0) { L.trailT = 0.03; Feel.afterimage(h.x, h.y, 'circle', h.radius * (1 + lift * 0.5), 0xffb347, 0, 0.4); }
     // telegraph at landing spot
-    const r = s.radius[L.i];
+    const r = L.r;
     L.g.clear();
     L.g.fillStyle(0xffb347, 0.12 + 0.2 * p); L.g.fillCircle(L.ex, L.ey, r);
     L.g.lineStyle(3, 0xffb347, 0.9); L.g.strokeCircle(L.ex, L.ey, r);
@@ -161,10 +166,24 @@ class WarriorKit {
       this.leap = null;
       h.invulnerable = false;
       h.gfx.setScale(1);
-      const dmg = h.skillDamage(s.damage[L.i]);
+      const dmg = h.skillDamage(s.damage), stun = h.skillDuration(s.stun);
+      const hit = new Set();
       for (const en of Combat.enemiesInRadius(h.x, h.y, r)) {
+        hit.add(en);
         Combat.dealDamage(en, dmg, { source: h, skill: true, knock: { x: en.x - h.x, y: en.y - h.y, force: 300 } });
-        if (en.alive) en.applyStun(s.stun[L.i]);
+        if (en.alive) en.applyStun(stun);
+      }
+      if (h.hasMilestone('R', 'shockwave')) {
+        const cx = h.x, cy = h.y, r2 = r * s.shockwaveRadiusMul;
+        this.scene.later(s.shockwaveDelay, () => {
+          for (const en of Combat.enemiesInRadius(cx, cy, r2)) {
+            if (hit.has(en)) continue;
+            Combat.dealDamage(en, dmg * s.shockwaveMul, { source: h, skill: true, knock: { x: en.x - cx, y: en.y - cy, force: 260 } });
+          }
+          Feel.ring(cx, cy, r2, 0xffb347, { from: r, duration: 350, width: 6 });
+          Feel.shake(0.008, 160);
+          Sfx.play('thump');
+        });
       }
       Feel.ring(h.x, h.y, r, 0xffb347, { duration: 380, width: 8, fill: true });
       Feel.ring(h.x, h.y, r * 1.6, 0xffffff, { from: r * 0.5, duration: 600, width: 4 });
@@ -176,24 +195,24 @@ class WarriorKit {
     }
   }
 
-  drawIndicator(g, key, rank, mx, my) {
-    const h = this.hero, i = Math.max(0, rank - 1);
+  drawIndicator(g, key, mx, my) {
+    const h = this.hero;
     const ang = this.aimAngle(mx, my);
     const col = 0x9cc8ff;
     if (key === 'Q') {
-      const s = this.S.Q, r = s.radius[i], arc = s.arc[i] * Math.PI / 180;
+      const s = this.S.Q, r = h.skillRadius(s.radius), arc = s.arc * Math.PI / 180;
       g.fillStyle(col, 0.18); g.slice(h.x, h.y, r, ang - arc / 2, ang + arc / 2, false); g.fillPath();
       g.lineStyle(2, col, 0.8); g.slice(h.x, h.y, r, ang - arc / 2, ang + arc / 2, false); g.strokePath();
     } else if (key === 'W') {
       const s = this.S.W;
-      const d = Math.max(120, Math.min(s.range[i], Math.hypot(mx - h.x, my - h.y)));
+      const d = Math.max(120, Math.min(h.skillRadius(s.range), Math.hypot(mx - h.x, my - h.y)));
       this.drawLine(g, h.x, h.y, ang, d, s.width * 2 + h.radius, col);
     } else if (key === 'E') {
-      const r = this.S.E.radius[i];
+      const r = h.skillRadius(this.S.E.radius);
       g.fillStyle(0xffb347, 0.12); g.fillCircle(h.x, h.y, r);
       g.lineStyle(2, 0xffb347, 0.8); g.strokeCircle(h.x, h.y, r);
     } else if (key === 'R') {
-      const s = this.S.R, r = s.radius[i];
+      const s = this.S.R, r = h.skillRadius(s.radius);
       g.lineStyle(1.5, 0xffffff, 0.35); g.strokeCircle(h.x, h.y, s.range);
       let dx = mx - h.x, dy = my - h.y; const d = Math.hypot(dx, dy);
       if (d > s.range) { dx = dx / d * s.range; dy = dy / d * s.range; }

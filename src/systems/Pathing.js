@@ -112,7 +112,7 @@ class Pathing {
     const r = u.radius * 0.75;
     if (dx === 0 && dy === 0) return false;
     if (this.circleBlocked(u.x, u.y, r)) {
-      // Stuck inside something (e.g. a wall was built on top of us): let the unit walk out.
+      // Stuck inside something: let the unit walk out.
       u.x = Phaser.Math.Clamp(u.x + dx, r, CONFIG.WORLD_W - r);
       u.y = Phaser.Math.Clamp(u.y + dy, r, CONFIG.WORLD_H - r);
       return false;
@@ -168,10 +168,6 @@ class Pathing {
   }
 
   // ---------------------------------------------------------- flow field
-  wallCost(b) {
-    return CONFIG.buildings.wallPathCost + b.hp / 40;
-  }
-
   canStepDiag(x, y, dx, dy) {
     return this.isWalkable(x + dx, y) && this.isWalkable(x, y + dy);
   }
@@ -195,18 +191,15 @@ class Pathing {
       const i = heap.pop();
       const x = i % this.W, y = (i / this.W) | 0;
       const d = dist[i];
-      // cost of leaving tile i (if it's a wall, you pay to break it)
-      const b = this.building[i];
-      const extra = b ? this.wallCost(b) : 0;
       for (const [dx, dy, c] of DIRS8) {
         const nx = x + dx, ny = y + dy;
         if (!this.isLane(nx, ny)) continue;
         if (dx !== 0 && dy !== 0) {
-          // no diagonal corner cutting around terrain or walls
-          if (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy) || b || this.building[this.idx(nx, ny)]) continue;
+          // no diagonal corner cutting around terrain
+          if (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy)) continue;
         }
         const ni = this.idx(nx, ny);
-        const nd = d + c + extra;
+        const nd = d + c;
         if (nd < dist[ni]) { dist[ni] = nd; heap.push(ni, nd); }
       }
     }
@@ -220,14 +213,12 @@ class Pathing {
     const i = this.idx(x, y);
     if (this.isLane(x, y) && this.dist[i] === 0) return null;
     let best = null, bestD = Infinity;
-    const here = this.building[i];
     for (const [dx, dy, c] of DIRS8) {
       const nx = x + dx, ny = y + dy;
       if (!this.isLane(nx, ny)) continue;
       const ni = this.idx(nx, ny);
-      const nb = this.building[ni];
-      if (dx !== 0 && dy !== 0 && (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy) || nb || here)) continue;
-      const d = this.dist[ni] + c + (nb ? this.wallCost(nb) : 0);
+      if (dx !== 0 && dy !== 0 && (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy))) continue;
+      const d = this.dist[ni] + c;
       if (d < bestD) { bestD = d; best = { tx: nx, ty: ny }; }
     }
     if (!best && !this.isLane(x, y)) {

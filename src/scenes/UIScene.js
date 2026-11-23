@@ -1,9 +1,20 @@
-// HUD overlay: top bar, hero panel, minimap, build panel, shop, tooltips, notices.
+// HUD overlay: top bar, hero panel, minimap, build panel, level-up item picks, tooltips, notices.
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const UI_DEPTH = { panel: 10, content: 20, window: 50, tooltip: 100 };
 const SKILL_KEYS = ['Q', 'W', 'E', 'R'];
 const BUILD_TYPES = ['arrow', 'cannon', 'frost', 'barracks', 'mine'];
+const PCT = (v) => Math.round(v * 100) + '%';
+const STAT_FMT = {
+  damage: v => '+' + +v.toFixed(2) + ' damage', hp: v => '+' + v + ' HP', armor: v => '+' + v + ' armor', speed: v => '+' + v + ' move speed',
+  hpRegen: v => '+' + v + ' HP/s', attackSpeed: v => '+' + PCT(v) + ' attack speed', cdr: v => '-' + PCT(v) + ' cooldowns',
+  lifesteal: v => PCT(v) + ' lifesteal', chain: v => 'attacks chain to ' + v + ' enemies', thorns: v => 'reflect ' + PCT(v) + ' melee damage',
+  revive: v => 'revive, cooldown ' + Math.round(CONFIG.phoenixCooldown / v) + 's', skillDamage: v => '+' + PCT(v) + ' skill damage',
+  windCloak: v => '+' + PCT(v) + ' speed for ' + CONFIG.windCloakTime + 's after Dash / Poison Pool', whirlChance: v => '+' + PCT(v) + ' Whirl chance', whirlRadius: v => '+' + PCT(v) + ' Whirl radius',
+  dashRange: v => '+' + PCT(v) + ' Dash range', dashCd: v => '-' + v + 's Dash cooldown', killDamage: v => '+' + +v.toFixed(2) + ' damage per kill',
+  rageTime: v => '+' + v + 's Rage', rageCd: v => '-' + v + 's Rage cooldown',
+};
+const ITEM_GRID = 16;   // owned-item icons shown (2 rows of 8)
 
 class UIScene extends Phaser.Scene {
   constructor() { super('UIScene'); }
@@ -14,7 +25,6 @@ class UIScene extends Phaser.Scene {
     this.hero = this.gs.hero;
     this.regions = [];
     this.listeners = [];
-    this.shopOpen = false;
     this.buildOpen = false;
     this.vignette = 0;
     this.lastKeepPing = 0;
@@ -27,7 +37,7 @@ class UIScene extends Phaser.Scene {
     this.createRightColumn();
     this.createBuildPanel();
     this.createSelectionPanel();
-    this.createShop();
+    this.createPicks();
     this.createOverlays();
     this.createTooltip();
 
@@ -36,7 +46,7 @@ class UIScene extends Phaser.Scene {
     on('waveStart', (n, plan) => this.banner('WAVE ' + n, plan.bosses ? 'BOSS WAVE — ' + plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · ') : plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · '), plan.bosses ? '#ff5050' : '#ffffff'));
     on('waveCleared', (n, gold) => this.banner('WAVE ' + n + ' CLEARED', '+' + gold + ' gold', '#7cf29a'));
     on('levelUp', (lv, unlocked) => {
-      this.banner('LEVEL ' + lv, unlocked && unlocked.length ? unlocked.join('\n') : 'Skills grow stronger', '#ffd23f', unlocked && unlocked.length ? 2600 : 1200);
+      if (unlocked && unlocked.length) this.notice(unlocked.join('\n'), 3000);   // the pick panel is the level-up banner
       Feel.popScale(this.portraitLevel, 1.6, 150);
     });
     on('goldChanged', (amt) => { if (amt > 0) Feel.popScale(this.goldText, 1.25, 80); });
@@ -44,11 +54,12 @@ class UIScene extends Phaser.Scene {
       this.vignette = Math.min(0.55, this.vignette + 0.25);
       if (this.time.now - this.lastKeepPing > 2500) { this.lastKeepPing = this.time.now; this.gs.ping(this.gs.keep.x, this.gs.keep.y, 0xff3030); }
     });
-    on('skillReady', (k) => { this.skillPulse[k] = 0.35; Sfx.play('ready'); });
+    on('skillReady', (k) => { this.skillPulse[k] = 0.35; if (CONFIG.skills[this.hero.heroKey][k].cast !== 'passive') Sfx.play('ready'); });
     on('skillDenied', (k) => { this.skillDenied[k] = 0.25; });
     on('pauseChanged', (p) => this.pauseLayer.setVisible(p));
     on('selectionChanged', () => this.refreshSelection());
-    on('inventoryChanged', () => this.refreshShop());
+    on('itemChoices', () => this.refreshPicks());
+    on('inventoryChanged', () => this.refreshPicks());
     on('cursorMode', () => { });
     on('keepUpgraded', () => this.refreshBuildPanel());
     on('settingsChanged', () => this.refreshToggles());
@@ -57,7 +68,9 @@ class UIScene extends Phaser.Scene {
       this.listeners = [];
     });
 
-    this.time.delayedCall(400, () => this.notice('Skills: press Q/W/E/R to aim, left-click to cast (right-click / Esc cancels)', 5000));
+    this.time.delayedCall(400, () => this.notice(this.hero.heroKey === 'warrior'
+      ? 'Warrior: Q, W and E are passive. R dashes toward the cursor. Level up to pick items.'
+      : 'Skills: press W/E/R to aim, left-click to cast (right-click / Esc cancels). Level up to pick items.', 5000));
   }
 
   // ------------------------------------------------------------------ helpers
@@ -172,42 +185,47 @@ class UIScene extends Phaser.Scene {
       const autoT = this.text(sx + 29, sy + 66, '', 10, '#7cf29a', { fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
       this.skillUI[k] = { sx, sy, keyT, nameT, cdT, autoT };
     });
-    // items
+    // owned items: 2 rows of 8
     this.itemG = this.add.graphics().setDepth(UI_DEPTH.content);
     this.itemSlots = [];
-    for (let i = 0; i < CONFIG.inventorySlots; i++) {
-      const ix = X + 666 + (i % 3) * 48, iy = Y + 12 + Math.floor(i / 3) * 46;
-      const zone = this.add.zone(ix, iy, 42, 42).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(UI_DEPTH.content);
-      zone.on('pointerdown', (p) => {
-        if (!p.leftButtonDown()) return;
-        if (this.shopOpen && this.hero.items[i]) { this.gs.shop.sell(i); this.refreshShop(); this.hideTip(); }
-        else if (!this.hero.items[i]) this.toggleShop(true);
-      });
-      zone.on('pointerover', () => {
-        const key = this.hero.items[i];
-        if (key) this.showTip(this.itemTip(key) + '\n' + (this.shopOpen ? 'Click to sell for ' + this.gs.shop.sellValue(key) + 'g' : 'Open shop (B) to sell or level up'));
-        else this.showTip('Empty slot\nClick or press B to open the shop');
-      });
-      zone.on('pointerout', () => this.hideTip());
-      const lvT = this.text(ix + 40, iy + 40, '', 11, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1).setDepth(UI_DEPTH.content + 3);
+    for (let i = 0; i < ITEM_GRID; i++) {
+      const ix = X + 664 + (i % 8) * 19, iy = Y + 14 + Math.floor(i / 8) * 42;
+      this.ownedItemZone(ix, iy, 18, 32, i).setDepth(UI_DEPTH.content);
+      const lvT = this.text(ix + 9, iy + 19, '', 10, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
       this.itemSlots.push({ x: ix, y: iy, lvT });
     }
+    this.text(X + 664, Y + 102, 'ITEMS', 9, '#6b7280').setOrigin(0, 1);
+  }
+
+  ownedItems() { return CONFIG.itemOrder.filter(k => this.hero.itemLevels[k]); }
+
+  // hover zone over the i-th owned item icon (HUD row and pick panel)
+  ownedItemZone(x, y, w, h, i) {
+    const z = this.add.zone(x, y, w, h).setOrigin(0).setInteractive();
+    z.on('pointerover', () => { const key = this.ownedItems()[i]; if (key) this.showTip(this.itemTip(key)); });
+    z.on('pointerout', () => this.hideTip());
+    return z;
   }
 
   skillTip(k) {
     const h = this.hero, def = CONFIG.skills[h.heroKey][k];
-    const how = { aim: 'Press ' + k + ', then left-click to cast', instant: 'Press ' + k + ' to cast', auto: 'Autocasts while attacking — ' + k + ' toggles (' + (h.kit.autoQ ? 'ON' : 'OFF') + ')' }[def.cast];
+    const how = { aim: 'Press ' + k + ', then left-click to cast', instant: 'Press ' + k + ' to cast', passive: 'Passive', auto: 'Autocasts while attacking — ' + k + ' toggles (' + (h.kit.autoQ ? 'ON' : 'OFF') + ')' }[def.cast];
     const sc = CONFIG.heroCommon.skillScaling, lv = h.level - 1;
     let str = def.name + '  [' + k + ']\n' + def.desc + '\n' + how +
-      '\nCooldown ' + h.skillCooldown(k).toFixed(1) + 's' +
+      (def.cd ? '\nCooldown ' + h.skillCooldown(k).toFixed(1) + 's' : '') +
       (lv > 0 ? '\nLevel bonus: +' + Math.round(sc.damage * lv * 100) + '% power, +' + Math.round(sc.radius * lv * 100) + '% area, +' + Math.round(sc.duration * lv * 100) + '% duration' : '');
     for (const m of def.milestones || []) str += '\n' + (h.level >= m.level ? '[x] ' : '[ ] ') + 'Lv ' + m.level + ': ' + m.text;
     return str;
   }
 
+  statLines(key, lv) {
+    const st = CONFIG.items[key].stats;
+    return Object.keys(st).map(k => STAT_FMT[k] ? STAT_FMT[k](st[k] * lv) : '+' + st[k] * lv + ' ' + k);
+  }
+
   itemTip(key) {
-    const it = CONFIG.items[key], lv = this.gs.shop.level(key);
-    return it.name + (lv ? '  Lv ' + lv : '') + '\n' + it.desc + (lv ? '  (×' + lv + ')' : '');
+    const it = CONFIG.items[key], lv = this.gs.picks.level(key);
+    return it.name + '  Lv ' + lv + '\n' + this.statLines(key, lv).join('\n');
   }
 
   // ------------------------------------------------------------------ minimap
@@ -279,12 +297,11 @@ class UIScene extends Phaser.Scene {
   // ------------------------------------------------------------------ right column + build panel
   createRightColumn() {
     const X = 1206, W = 68;
-    this.region(X - 2, 48, W + 4, 252);
+    this.region(X - 2, 48, W + 4, 192);
     this.colBtns = {
       build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-5 place buildings' }),
-      shop: this.button(X, 110, W, 56, 'SHOP\n(B)', () => this.toggleShop(), { size: 12, tip: () => 'Item shop (B). Works anywhere, anytime.' }),
-      keep: this.button(X, 170, W, 66, 'KEEP\n(U)', () => this.gs.upgradeKeep(), { size: 12, color: 0x4a3a10, hover: 0x6a5418, stroke: 0xffd23f, tip: () => this.keepTip() }),
-      rally: this.button(X, 240, W, 56, 'RALLY\n(F)', () => {
+      keep: this.button(X, 110, W, 66, 'KEEP\n(U)', () => this.gs.upgradeKeep(), { size: 12, color: 0x4a3a10, hover: 0x6a5418, stroke: 0xffd23f, tip: () => this.keepTip() }),
+      rally: this.button(X, 180, W, 56, 'RALLY\n(F)', () => {
         if (this.gs.cursorMode === 'rally') { this.gs.allyCommand.setAuto(); this.gs.setCursorMode(null); }
         else this.gs.setCursorMode('rally');
       }, { size: 12, color: 0x1e3a66, hover: 0x2a4f88, stroke: 0x4a8fe0, tip: () => 'Rally allies (F), then left-click a spot.\nF twice: back to automatic.\nMode: ' + this.gs.allyCommand.mode }),
@@ -407,90 +424,75 @@ class UIScene extends Phaser.Scene {
     this.setText(this.selSell.txt, 'selS', 'Sell +' + s.sellValue());
   }
 
-  // ------------------------------------------------------------------ shop
-  createShop() {
+  // ------------------------------------------------------------------ level-up item picks
+  // Shown while GameScene offers choices (the game is paused until one is picked). No close button.
+  createPicks() {
     const X = 330, Y = 70, W = 620, H = 470;
-    this.shopRegion = this.region(X, Y, W, H, () => this.shopOpen);
+    this.region(X, Y, W, H, () => !!this.gs.picks.choices);
     const c = this.add.container(0, 0).setDepth(UI_DEPTH.window);
-    this.shopC = c;
+    this.picksC = c;
     const bg = this.add.graphics();
     bg.fillStyle(0x0f131a, 0.96); bg.fillRoundedRect(X, Y, W, H, 10);
     bg.lineStyle(2, 0xffd23f, 0.8); bg.strokeRoundedRect(X, Y, W, H, 10);
     c.add(bg);
-    c.add(this.add.text(X + 20, Y + 14, 'SHOP', { fontFamily: FONT, fontSize: '22px', color: '#ffd23f', fontStyle: 'bold' }));
-    this.shopGold = this.add.text(X + 110, Y + 20, '', { fontFamily: FONT, fontSize: '15px', color: '#ffd23f' });
-    c.add(this.shopGold);
-    const close = this.add.text(X + W - 30, Y + 12, 'X', { fontFamily: FONT, fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setInteractive({ useHandCursor: true });
-    close.on('pointerdown', () => this.toggleShop(false));
-    c.add(close);
-    this.shopItems = [];
-    const iconG = this.add.graphics();
-    this.shopIconG = iconG;
-    CONFIG.itemOrder.forEach((key, i) => {
-      const it = CONFIG.items[key];
-      const col = i % 4, row = Math.floor(i / 4);
-      const ix = X + 18 + col * 148, iy = Y + 56 + row * 104;
-      const r = this.add.rectangle(ix, iy, 140, 96, 0x1a2030).setOrigin(0).setStrokeStyle(2, 0x3a4252).setInteractive({ useHandCursor: true });
-      r.on('pointerdown', (p) => { if (p.leftButtonDown()) { Sfx.resume(); if (this.gs.shop.buy(key)) { this.refreshShop(); this.showTip(this.shopTip(key)); } } });
-      r.on('pointerover', () => { r.setStrokeStyle(2, 0xffd23f); this.showTip(this.shopTip(key)); });
-      r.on('pointerout', () => { r.setStrokeStyle(2, 0x3a4252); this.hideTip(); });
-      const name = this.add.text(ix + 46, iy + 10, it.name, { fontFamily: FONT, fontSize: '12px', color: '#ffffff', fontStyle: 'bold', wordWrap: { width: 90 } });
-      const cost = this.add.text(ix + 46, iy + 44, it.cost + 'g', { fontFamily: FONT, fontSize: '13px', color: '#ffd23f' });
-      const lvT = this.add.text(ix + 132, iy + 44, '', { fontFamily: FONT, fontSize: '12px', color: '#7cf29a', fontStyle: 'bold' }).setOrigin(1, 0);
-      const desc = this.add.text(ix + 8, iy + 64, it.desc, { fontFamily: FONT, fontSize: '10px', color: '#9ca3af', wordWrap: { width: 126 } });
-      c.add([r, name, cost, lvT, desc]);
-      this.shopItems.push({ key, r, cost, lvT, ix, iy });
-    });
-    c.add(iconG);
-    c.add(this.add.text(X + 20, Y + 376, 'INVENTORY — buy an owned item again to level it up · click an item to sell it for 50% of all spent', { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' }));
-    this.shopInvG = this.add.graphics();
-    c.add(this.shopInvG);
-    this.shopInv = [];
-    for (let i = 0; i < CONFIG.inventorySlots; i++) {
-      const sx = X + 20 + i * 64, sy = Y + 398;
-      const z = this.add.zone(sx, sy, 56, 56).setOrigin(0).setInteractive({ useHandCursor: true });
-      z.on('pointerdown', () => { if (this.hero.items[i]) { this.gs.shop.sell(i); this.refreshShop(); this.hideTip(); } });
-      z.on('pointerover', () => { const k = this.hero.items[i]; if (k) this.showTip(this.itemTip(k) + '\nSell for ' + this.gs.shop.sellValue(k) + 'g'); });
-      z.on('pointerout', () => this.hideTip());
-      const lvT = this.add.text(sx + 53, sy + 54, '', { fontFamily: FONT, fontSize: '12px', color: '#ffd23f', fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1);
+    this.picksTitle = this.add.text(X + 20, Y + 14, '', { fontFamily: FONT, fontSize: '22px', color: '#ffd23f', fontStyle: 'bold' });
+    c.add(this.picksTitle);
+    this.picksMore = this.add.text(X + W - 20, Y + 20, '', { fontFamily: FONT, fontSize: '14px', color: '#9ca3af' }).setOrigin(1, 0);
+    c.add(this.picksMore);
+    this.pickIconG = this.add.graphics();
+    this.pickCards = [];
+    for (let i = 0; i < CONFIG.itemPickCount; i++) {
+      const cx = X + 18 + i * 197, cy = Y + 56, cw = 188, ch = 290;
+      const r = this.add.rectangle(cx, cy, cw, ch, 0x1a2030).setOrigin(0).setStrokeStyle(2, 0x3a4252).setInteractive({ useHandCursor: true });
+      const card = { r, cx, cy, cw, key: null };
+      r.on('pointerdown', (p) => { if (p.leftButtonDown() && card.key) { Sfx.resume(); this.hideTip(); this.gs.picks.pick(card.key); } });
+      r.on('pointerover', () => r.setStrokeStyle(2, 0xffd23f));
+      r.on('pointerout', () => r.setStrokeStyle(2, 0x3a4252));
+      card.name = this.add.text(cx + cw / 2, cy + 76, '', { fontFamily: FONT, fontSize: '16px', color: '#ffffff', fontStyle: 'bold', align: 'center', wordWrap: { width: cw - 16 } }).setOrigin(0.5, 0);
+      card.lv = this.add.text(cx + cw / 2, cy + 102, '', { fontFamily: FONT, fontSize: '14px', color: '#7cf29a', fontStyle: 'bold' }).setOrigin(0.5, 0);
+      card.stats = this.add.text(cx + 12, cy + 132, '', { fontFamily: FONT, fontSize: '13px', color: '#e5e7eb', lineSpacing: 4, wordWrap: { width: cw - 24 } });
+      card.now = this.add.text(cx + 12, cy + 220, '', { fontFamily: FONT, fontSize: '11px', color: '#9ca3af', lineSpacing: 2, wordWrap: { width: cw - 24 } });
+      c.add([r, card.name, card.lv, card.stats, card.now]);
+      this.pickCards.push(card);
+    }
+    c.add(this.pickIconG);
+    c.add(this.add.text(X + 20, Y + 360, 'OWNED — picking an owned item levels it up. Higher-level items show up more often.', { fontFamily: FONT, fontSize: '12px', color: '#9ca3af' }));
+    this.pickInv = [];
+    for (let i = 0; i < ITEM_GRID; i++) {
+      const sx = X + 20 + (i % 8) * 72, sy = Y + 382 + Math.floor(i / 8) * 42;
+      const z = this.ownedItemZone(sx, sy, 68, 38, i);
+      const lvT = this.add.text(sx + 40, sy + 19, '', { fontFamily: FONT, fontSize: '12px', color: '#ffd23f', fontStyle: 'bold' }).setOrigin(0, 0.5);
       c.add([z, lvT]);
-      this.shopInv.push({ x: sx, y: sy, lvT });
+      this.pickInv.push({ x: sx, y: sy, lvT });
     }
     c.setVisible(false);
-    this.refreshShop();
   }
 
-  toggleShop(force) {
-    this.shopOpen = force != null ? force : !this.shopOpen;
-    this.shopC.setVisible(this.shopOpen);
-    if (this.shopOpen) this.refreshShop();
-    this.hideTip();
-  }
-
-  shopTip(key) {
-    const lv = this.gs.shop.level(key), cost = this.gs.shop.costOf(key);
-    return this.itemTip(key) + '\n' + (lv ? 'Level up to ' + (lv + 1) + ' — ' + cost + 'g' : 'Buy — ' + cost + 'g');
-  }
-
-  refreshShop() {
-    const g = this.shopIconG, shop = this.gs.shop;
+  refreshPicks() {
+    const picks = this.gs.picks, choices = picks.choices;
+    this.picksC.setVisible(!!choices);
+    if (!choices) { this.hideTip(); return; }
+    this.picksTitle.setText('LEVEL ' + (this.hero.level - picks.pending + 1) + ' — choose an item');
+    this.picksMore.setText(picks.pending > 1 ? (picks.pending - 1) + ' more after this' : '');
+    const g = this.pickIconG;
     g.clear();
-    for (const s of this.shopItems) {
-      const it = CONFIG.items[s.key];
-      const cost = shop.costOf(s.key), lv = shop.level(s.key);
-      s.cost.setText(cost + 'g');
-      s.cost.setColor(this.gs.economy.canAfford(cost) ? '#ffd23f' : '#ef4444');
-      s.lvT.setText(lv ? 'Lv ' + lv : '');
-      this.drawItemIcon(g, s.ix + 24, s.iy + 30, it, 14);
-    }
-    const ig = this.shopInvG;
-    ig.clear();
-    this.shopInv.forEach((slot, i) => {
-      ig.fillStyle(0x1a2030, 1); ig.fillRect(slot.x, slot.y, 56, 56);
-      ig.lineStyle(2, 0x3a4252, 1); ig.strokeRect(slot.x, slot.y, 56, 56);
-      const k = this.hero.items[i];
-      if (k) this.drawItemIcon(ig, slot.x + 28, slot.y + 28, CONFIG.items[k], 16);
-      slot.lvT.setText(k && shop.level(k) > 1 ? String(shop.level(k)) : '');
+    this.pickCards.forEach((card, i) => {
+      const key = choices[i];
+      card.key = key || null;
+      [card.r, card.name, card.lv, card.stats, card.now].forEach(o => o.setVisible(!!key));
+      if (!key) return;
+      const it = CONFIG.items[key], lv = picks.level(key);
+      card.name.setText(it.name);
+      card.lv.setText(lv ? 'Lv ' + lv + '  →  ' + (lv + 1) : 'NEW');
+      card.stats.setText(this.statLines(key, lv + 1).join('\n'));
+      card.now.setText(lv ? 'Now:\n' + this.statLines(key, lv).join('\n') : '');
+      this.drawItemIcon(g, card.cx + card.cw / 2, card.cy + 40, it, 22);
+    });
+    const owned = this.ownedItems();
+    this.pickInv.forEach((slot, i) => {
+      const k = owned[i];
+      if (k) this.drawItemIcon(g, slot.x + 18, slot.y + 19, CONFIG.items[k], 13);
+      slot.lvT.setText(k ? 'Lv ' + picks.level(k) : '');
     });
   }
 
@@ -520,11 +522,11 @@ class UIScene extends Phaser.Scene {
     const pt = this.add.text(640, 120, 'PAUSED', { fontFamily: FONT, fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
     const help = this.add.text(640, 360, [
       'Right-click: move / attack (hold to follow cursor)      A + left-click: attack-move      S: stop',
-      'Q W E R: aim a skill, then left-click to cast (right-click / Esc cancels). Skills grow with your level.',
+      'Q W E R: aim a skill, then left-click to cast (right-click / Esc cancels). Warrior: Q/W/E passive, R dashes.',
       'Self-cast skills fire on key press. Mage Fire Bolt autocasts at your attack target (Q toggles).',
       'V: build panel   1-5: place building   Right-click / Esc: cancel',
       'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep   Buildings cannot be damaged',
-      'B: shop (buy an item again to level it up)   F: rally allies (F twice: auto)   N: start next wave early',
+      'Level up: pick 1 of 3 items (game pauses)   F: rally allies (F twice: auto)   N: start next wave early',
       'Camera follows the hero. Hold Space to look around (screen edges, middle-drag, minimap)',
       'P / Esc: pause   M: mute',
     ].join('\n'), { fontFamily: FONT, fontSize: '15px', color: '#e5e7eb', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
@@ -613,13 +615,10 @@ class UIScene extends Phaser.Scene {
     this.setText(this.colBtns.keep.txt, 'keepbtn', n ? 'KEEP T' + k.tier + '\n(U) ' + n.cost + 'g' : 'KEEP T' + k.tier + '\nMAX');
     this.colBtns.rally.bg.setStrokeStyle(2, gs.allyCommand.mode === 'command' || gs.cursorMode === 'rally' ? 0x8fc3ff : 0x4a8fe0);
     this.colBtns.build.bg.setStrokeStyle(2, this.buildOpen ? 0x44ff66 : 0x4b5563);
-    this.colBtns.shop.bg.setStrokeStyle(2, this.shopOpen ? 0xffd23f : 0x4b5563);
 
     this.drawHeroPanel(dt);
     this.drawMinimap(dt);
     this.updateSelection();
-    if (this.shopOpen) this.setText(this.shopGold, 'shopGold', 'Gold: ' + gs.economy.gold);
-    if (this.shopOpen && this.cache.shopGoldVal !== gs.economy.gold) { this.cache.shopGoldVal = gs.economy.gold; this.refreshShop(); }
     if (this.buildOpen && this.cache.buildGoldVal !== gs.economy.gold) {
       this.cache.buildGoldVal = gs.economy.gold;
       BUILD_TYPES.forEach(t => this.buildBtns[t].costT.setColor(gs.economy.canAfford(CONFIG.buildings[t].cost) ? '#ffd23f' : '#ef4444'));
@@ -646,6 +645,7 @@ class UIScene extends Phaser.Scene {
     this.vignette = Math.max(0, this.vignette - dt * 0.8);
     const vg = this.vigG;
     vg.clear();
+    if (h.alive && h.rage) { vg.fillStyle(0xff0000, 0.1 + 0.05 * Math.sin(this.time.now / 90)); vg.fillRect(0, 0, 1280, 720); }   // Warrior Rage tint
     if (this.vignette > 0.01) {
       for (let i = 0; i < 6; i++) {
         const a = this.vignette * (1 - i / 6) * 0.5, t = 6 + i * 6;
@@ -702,19 +702,20 @@ class UIScene extends Phaser.Scene {
       if (def.cast === 'auto') {
         this.setText(u.autoT, 'auto' + k, autoOff ? 'AUTO OFF' : 'AUTO');
         u.autoT.setColor(autoOff ? '#ef4444' : '#7cf29a');
+      } else if (h.kit.skillLabel) {
+        this.setText(u.autoT, 'auto' + k, h.kit.skillLabel(k));
+        u.autoT.setColor(k === 'W' && h.rage ? '#ff5050' : '#9ca3af');
       }
     }
 
     // items
-    const ig = this.itemG;
+    const ig = this.itemG, owned = this.ownedItems();
     ig.clear();
-    this.itemSlots.forEach((s, i) => {
-      ig.fillStyle(0x161a22, 1); ig.fillRect(s.x, s.y, 42, 42);
-      ig.lineStyle(1.5, this.shopOpen ? 0x8a6d00 : 0x3a4252, 1); ig.strokeRect(s.x, s.y, 42, 42);
-      const key = h.items[i];
-      if (key) this.drawItemIcon(ig, s.x + 21, s.y + 21, CONFIG.items[key], 12);
-      const lv = key ? this.gs.shop.level(key) : 0;
-      this.setText(s.lvT, 'ilv' + i, lv > 1 ? String(lv) : '');
+    this.itemSlots.forEach((sl, i) => {
+      const key = owned[i];
+      if (key) this.drawItemIcon(ig, sl.x + 9, sl.y + 9, CONFIG.items[key], 7);
+      else { ig.fillStyle(0x161a22, 1); ig.fillRect(sl.x + 1, sl.y + 1, 16, 16); }
+      this.setText(sl.lvT, 'ilv' + i, key ? String(this.gs.picks.level(key)) : '');
     });
   }
 
@@ -738,10 +739,10 @@ class UIScene extends Phaser.Scene {
   drawSkillIcon(g, heroKey, k, x, y) {
     const icons = {
       warrior: {
-        Q: () => { g.fillStyle(0x9cc8ff, 1); g.slice(x - 8, y + 4, 18, -1.4, 0.3, false); g.fillPath(); },
-        W: () => { g.fillStyle(0x9cc8ff, 1); g.fillTriangle(x + 12, y, x - 6, y - 9, x - 6, y + 9); g.fillRect(x - 14, y - 2, 8, 4); },
-        E: () => { g.lineStyle(3, 0xffb347, 1); g.strokeCircle(x, y, 7); g.strokeCircle(x, y, 13); },
-        R: () => { g.fillStyle(0xffb347, 1); g.fillCircle(x, y, 7); g.lineStyle(2, 0xffb347, 1); for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; g.lineBetween(x + Math.cos(a) * 9, y + Math.sin(a) * 9, x + Math.cos(a) * 15, y + Math.sin(a) * 15); } },
+        Q: () => { g.lineStyle(3, 0x9cc8ff, 1); g.strokeCircle(x, y, 12); g.fillStyle(0xffffff, 1); g.fillCircle(x, y, 4); g.fillTriangle(x + 12, y - 6, x + 18, y, x + 8, y + 2); },
+        W: () => { g.fillStyle(0xff3030, 1); g.fillTriangle(x, y - 14, x + 10, y + 8, x - 10, y + 8); g.fillStyle(0xffd23f, 1); g.fillTriangle(x, y - 4, x + 4, y + 6, x - 4, y + 6); },
+        E: () => { g.fillStyle(0xb0213a, 1); g.fillCircle(x, y + 3, 9); g.fillTriangle(x - 8, y, x + 8, y, x, y - 14); },
+        R: () => { g.fillStyle(0x9cc8ff, 1); g.fillTriangle(x + 12, y, x - 6, y - 9, x - 6, y + 9); g.fillRect(x - 14, y - 2, 8, 4); },
       },
       mage: {
         Q: () => { g.fillStyle(0xff7a2a, 1); g.fillCircle(x + 4, y, 7); g.fillStyle(0xffd23f, 1); g.fillTriangle(x - 3, y - 5, x - 15, y, x - 3, y + 5); },

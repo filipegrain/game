@@ -38,7 +38,7 @@ class GameScene extends Phaser.Scene {
     this.hero = new Hero(this, this.heroKey, this.keep.rx + this.keep.rw + 60, this.keep.y);
     this.economy = new Economy(this, this.diff.startGold);
     this.leveling = new Leveling(this, this.hero);
-    this.shop = new Shop(this, this.hero);
+    this.picks = new ItemPicks(this, this.hero);
     this.build = new BuildSystem(this);
     this.allyCommand = new AllyCommand(this);
     this.waves = new WaveManager(this, this.diff);
@@ -56,7 +56,7 @@ class GameScene extends Phaser.Scene {
 
     if (this.simJob) {
       // the bot drives the hero; no HUD, no player input
-      this.ui = { isOverUI: () => false, shopOpen: false, toggleShop() { }, toggleBuildPanel() { } };
+      this.ui = { isOverUI: () => false, toggleBuildPanel() { } };
       this.recorder = new SimRecorder(this);
       this.bot = new SimBot(this, this.simJob.strategy);
       SimRunner.attach(this);
@@ -180,7 +180,7 @@ class GameScene extends Phaser.Scene {
         this.dragPan = { x: pointer.x, y: pointer.y, sx: this.cameras.main.scrollX, sy: this.cameras.main.scrollY };
         return;
       }
-      if (this.paused) return;
+      if (this.paused || this.picks.choices) return;
       if (pointer.rightButtonDown()) {
         if (this.hero.aiming) { this.hero.aiming = null; return; }   // cancel aim only, no move order
         if (this.build.placing) { this.build.cancel(); return; }
@@ -282,7 +282,6 @@ class GameScene extends Phaser.Scene {
       if (this.hero.aiming) this.hero.aiming = null;
       else if (this.build.placing) this.build.cancel();
       else if (this.cursorMode) this.setCursorMode(null);
-      else if (this.ui.shopOpen) this.ui.toggleShop(false);
       else if (this.build.selected) this.build.select(null);
       else this.togglePause();
       return;
@@ -290,7 +289,7 @@ class GameScene extends Phaser.Scene {
     if (code === 'KeyP') { this.togglePause(); return; }
     if (code === 'KeyM') { Settings.toggle('mute'); this.events.emit('settingsChanged'); return; }
     if (code === 'Space') { this.spaceHeld = true; return; }
-    if (this.paused) return;
+    if (this.paused || this.picks.choices) return;
 
     const skillKey = { KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R' }[code];
     if (skillKey) {
@@ -308,7 +307,6 @@ class GameScene extends Phaser.Scene {
           this.allyCommand.setAuto(); this.setCursorMode(null); this.lastF = 0;
         } else { this.setCursorMode('rally'); this.lastF = this.time.now; }
         break;
-      case 'KeyB': this.ui.toggleShop(); break;
       case 'KeyV': this.ui.toggleBuildPanel(); break;
       case 'KeyU': this.upgradeKeep(); break;
       case 'KeyN': case 'Enter': this.waves.startWave(); break;
@@ -425,8 +423,9 @@ class GameScene extends Phaser.Scene {
     this.events.emit('buildingsChanged');
   }
 
-  onEnemyKilled(e) {
+  onEnemyKilled(e, killer) {
     this.stats.kills++;
+    if (killer === this.hero) { this.hero.kills++; if (this.hero.kit.onKill) this.hero.kit.onKill(e); }
     this.economy.add(e.gold, e.x, e.y - e.radius - 4);
     if (this.recorder) this.recorder.goldEarned('bounty', e.gold);
     const h = this.hero;
@@ -467,7 +466,7 @@ class GameScene extends Phaser.Scene {
     this.updateCamera(realDt);
     this.pings = this.pings.filter(p => (p.t -= realDt) > 0);
     if (this.ended) { this.drawOverlays(); return; }
-    if (this.paused) { this.drawOverlays(); return; }
+    if (this.paused || this.picks.choices) { this.drawOverlays(); return; }   // level-up item pick pauses too
     if (this.hitstop > 0) { this.hitstop -= realDt; this.drawOverlays(); return; }
     this.step(realDt);
     this.drawOverlays();

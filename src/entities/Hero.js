@@ -12,9 +12,9 @@ class Hero extends Unit {
     this.xp = 0;
     this.cooldowns = { Q: 0, W: 0, E: 0, R: 0 };
     this.cdMax = { Q: 1, W: 1, E: 1, R: 1 };
-    this.items = new Array(CONFIG.inventorySlots).fill(null);   // item keys, one slot per type
-    this.itemLevels = {};    // key -> level
-    this.itemSpent = {};     // key -> total gold spent (for sell refunds)
+    this.itemLevels = {};    // key -> level (owned items)
+    this.reviveCd = 0;       // Phoenix Feather cooldown
+    this.kills = 0;          // hero kills (Warrior Bloodthirst)
     this.order = null;
     this.path = null; this.pathIdx = 0;
     this.stuckT = 0;
@@ -59,9 +59,8 @@ class Hero extends Unit {
       cdr: 0, lifesteal: 0, chain: 0, thorns: 0, skillDamage: 0,
       windCloak: 0, revive: 0, acquireRange: d.acquireRange,
     };
-    for (const key of this.items) {
-      if (!key) continue;
-      const st = CONFIG.items[key].stats, n = this.itemLevels[key] || 1;
+    for (const key in this.itemLevels) {
+      const st = CONFIG.items[key].stats, n = this.itemLevels[key];
       for (const k in st) {
         if (k === 'hp') s.maxHp += st[k] * n;
         else if (k === 'attackSpeed') s.attackSpeed += st[k] * n;
@@ -69,6 +68,7 @@ class Hero extends Unit {
       }
     }
     for (const k in CONFIG.itemCaps) s[k] = Math.min(CONFIG.itemCaps[k], s[k]);
+    if (this.kit && this.kit.modifyStats) this.kit.modifyStats(s);
     const oldMax = this.maxHp;
     this.stats = s;
     this.maxHp = Math.round(s.maxHp);
@@ -91,9 +91,14 @@ class Hero extends Unit {
   skillDuration(base) { return base * (1 + CONFIG.heroCommon.skillScaling.duration * (this.level - 1)); }
   levelCdr() { const sc = CONFIG.heroCommon.skillScaling; return Math.min(sc.cdrCap, sc.cdr * (this.level - 1)); }
   skillCooldown(key) {
+    const def = this.skillDefs[key];
     const cdr = 1 - (1 - this.levelCdr()) * (1 - this.stats.cdr);
-    return this.skillDefs[key].cd * (1 - Math.min(CONFIG.heroCommon.totalCdrCap, cdr));
+    const base = Math.max(def.minCd || 0, def.cd - (this.stats[def.cdStat] || 0));   // items can cut the base cd
+    return base * (1 - Math.min(CONFIG.heroCommon.totalCdrCap, cdr));
   }
+  // active Rage def (damageMul, lifesteal, critBonus) or null; Combat reads it
+  get rage() { return this.kit.rage || null; }
+  critMult() { return CONFIG.heroCommon.critMult + (this.rage ? this.rage.critBonus : 0); }
   hasMilestone(key, id) {
     const m = (this.skillDefs[key].milestones || []).find(x => x.id === id);
     return !!m && this.level >= m.level;
@@ -151,6 +156,7 @@ class Hero extends Unit {
     if (!this.alive) return;
     const def = this.skillDefs[key];
     if (def.cast === 'auto') { this.kit.toggleAuto(key); return; }
+    if (def.cast === 'passive') return;
     if (this.aiming === key) { this.aiming = null; return; }
     if (this.cooldowns[key] > 0) { Sfx.play('error'); this.scene.events.emit('skillDenied', key); return; }
     if (def.cast === 'instant') { this.aiming = null; this.tryCast(key, x, y); return; }
@@ -178,13 +184,14 @@ class Hero extends Unit {
     const cd = this.skillCooldown(key);
     this.cooldowns[key] = cd; this.cdMax[key] = cd;
     this.kit.cast(key, x, y);
-    if (key === 'W' && this.stats.windCloak > 0) this.windCloakT = 2;
+    if (def.windCloak && this.stats.windCloak > 0) this.windCloakT = CONFIG.windCloakTime;
     ui.emit('skillCast', key);
     return true;
   }
 
   // ------------------------------------------------------------ update
   update(dt) {
+    if (this.reviveCd > 0) this.reviveCd -= dt;
     if (!this.alive) {
       this.respawnT -= dt;
       this.kit.update(dt);   // lingering effects (poison pools) keep ticking
@@ -317,7 +324,7 @@ class Hero extends Unit {
     this.atkCd = 1 / (this.def.attackRate * this.stats.attackSpeed * this.atkSpeedMul);
     const hc = CONFIG.heroCommon;
     const crit = Math.random() < hc.critChance;
-    const dmg = this.stats.damage * (crit ? hc.critMult : 1);
+    const dmg = this.stats.damage * (crit ? this.critMult() : 1);
     const hit = (tgt) => {
       if (!tgt || !tgt.alive) return;
       Combat.dealDamage(tgt, dmg, { source: this, crit, isAttack: true, knock: this.def.melee ? { x: tgt.x - this.x, y: tgt.y - this.y, force: 60 } : null });
@@ -363,28 +370,19 @@ class Hero extends Unit {
   onDamaged(dmg, opts) {
     super.onDamaged(dmg, opts);
     if (dmg > this.maxHp * 0.08) Feel.shake(0.003, 80);
+    if (this.kit.onHurt) this.kit.onHurt();
   }
 
   die() {
-    if (this.stats.revive > 0) {
-      const i = this.items.indexOf('phoenix');
-      if (i >= 0) {
-        // each level is one revive; consume a level
-        const lv = (this.itemLevels.phoenix || 1) - 1;
-        const cost = CONFIG.items.phoenix.cost;
-        this.itemSpent.phoenix = Math.max(0, (this.itemSpent.phoenix || cost) - Math.round(cost * (1 + CONFIG.itemLevelCostMul * lv)));
-        if (lv <= 0) { this.items[i] = null; delete this.itemLevels.phoenix; delete this.itemSpent.phoenix; }
-        else this.itemLevels.phoenix = lv;
-        this.recalcStats();
-        this.hp = Math.round(this.maxHp * 0.5);
-        Feel.ring(this.x, this.y, 140, 0xff7a2a, { duration: 600, width: 6, fill: true });
-        Feel.burst(this.x, this.y, 0xff7a2a, 30);
-        Feel.floatText(this.x, this.y - 30, 'REVIVED!', '#ff9a4a', 22);
-        Sfx.play('levelup');
-        this.scene.events.emit('inventoryChanged');
-        this.scene.events.emit('heroRevived');
-        return;
-      }
+    if (this.stats.revive > 0 && this.reviveCd <= 0) {
+      this.reviveCd = CONFIG.phoenixCooldown / this.stats.revive;
+      this.hp = Math.round(this.maxHp * 0.5);
+      Feel.ring(this.x, this.y, 140, 0xff7a2a, { duration: 600, width: 6, fill: true });
+      Feel.burst(this.x, this.y, 0xff7a2a, 30);
+      Feel.floatText(this.x, this.y - 30, 'REVIVED!', '#ff9a4a', 22);
+      Sfx.play('levelup');
+      this.scene.events.emit('heroRevived');
+      return;
     }
     this.alive = false;
     this.kit.cancel();

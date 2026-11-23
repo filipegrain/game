@@ -125,43 +125,20 @@ class SimBot {
     else this.mageSkills(near);
   }
 
+  // Only Dash is active; Whirl, Rage and Bloodthirst are passive.
   warriorSkills(near) {
     const h = this.hero, S = CONFIG.skills.warrior, W = this.HB;
-    if (this.ready('R')) {
-      const c = this.cluster(near, h.x, h.y, S.R.range, h.skillRadius(S.R.radius));
-      if (c.count >= W.ultMin || c.boss) { this.cast('R', c.x, c.y); return; }
+    if (!this.ready('R')) return;
+    const range = h.skillRadius(S.R.range * (1 + (h.stats.dashRange || 0)));
+    if (this.retreating) {
+      if (near.some(e => Math.hypot(e.x - h.x, e.y - h.y) < 150)) { const hm = this.home(); this.cast('R', hm.x, hm.y); }
+      return;
     }
-    if (this.ready('E')) {
-      const r = h.skillRadius(S.E.radius);
-      const n = near.filter(e => Math.hypot(e.x - h.x, e.y - h.y) <= r).length;
-      if (n >= W.warCryMin || (n >= 1 && h.hp / h.maxHp < W.warCryLowHp)) { this.cast('E', h.x, h.y); return; }
-    }
-    if (this.ready('W')) {
-      const range = h.skillRadius(S.W.range);
-      if (this.retreating) {
-        if (near.some(e => Math.hypot(e.x - h.x, e.y - h.y) < 150)) { const hm = this.home(); this.cast('W', hm.x, hm.y); return; }
-      } else {
-        const f = this.focus;
-        const d = f && f.alive ? Math.hypot(f.x - h.x, f.y - h.y) : Infinity;
-        if (d > W.chargeMinDist && d <= range + 40) { this.cast('W', f.x, f.y); return; }
-        const c = this.cluster(near, h.x, h.y, range, 60);
-        if (c.count >= W.chargeCluster) {
-          const dx = c.x - h.x, dy = c.y - h.y, l = Math.hypot(dx, dy) || 1;
-          this.cast('W', c.x + dx / l * 60, c.y + dy / l * 60); return;
-        }
-      }
-    }
-    if (this.ready('Q')) {
-      const r = h.skillRadius(S.Q.radius), half = S.Q.arc * Math.PI / 360 + 0.15;
-      const inR = near.filter(e => Math.hypot(e.x - h.x, e.y - h.y) <= r + e.radius);
-      let best = null, bestN = 0;
-      for (const c of inR) {
-        const a = Math.atan2(c.y - h.y, c.x - h.x);
-        const n = inR.filter(e => Math.abs(Combat.angleDiff(a, Math.atan2(e.y - h.y, e.x - h.x))) <= half).length;
-        if (n > bestN) { bestN = n; best = c; }
-      }
-      if (best && bestN >= W.cleaveMin) this.cast('Q', best.x, best.y);
-    }
+    const f = this.focus;
+    const d = f && f.alive ? Math.hypot(f.x - h.x, f.y - h.y) : Infinity;
+    if (d > W.dashMinDist && d <= range + 40) { this.cast('R', f.x, f.y); return; }
+    const c = this.cluster(near, h.x, h.y, range, 60);
+    if (c.count >= W.dashCluster) this.cast('R', c.x, c.y);
   }
 
   mageSkills(near) {
@@ -222,12 +199,6 @@ class SimBot {
 
   resolve(step) {
     const sc = this.scene;
-    if (step === 'item') {
-      const key = this.nextItem();
-      if (!key) return null;
-      const cost = sc.shop.costOf(key);
-      return { cost, run: () => { if (sc.shop.buy(key)) sc.recorder.spent('items', cost, 'item', key, sc.shop.level(key)); } };
-    }
     if (step === 'keep') {
       const next = sc.keep.nextTierDef;
       if (!next) return null;
@@ -260,15 +231,9 @@ class SimBot {
     return best;
   }
 
-  nextItem() {
-    const h = this.hero;
-    for (const key of this.itemBuild) if (!h.itemLevels[key] && h.items.indexOf(null) >= 0) return key;
-    let best = null;
-    for (const key of this.itemBuild) {
-      if (!h.itemLevels[key]) continue;
-      if (!best || h.itemLevels[key] < h.itemLevels[best]) best = key;
-    }
-    return best;
+  // Level-up item pick: first offered item in the hero's priority list, else the first offered.
+  chooseItem(choices) {
+    return this.itemBuild.find(k => choices.includes(k)) || choices[0];
   }
 
   // ================================================================ tower placement

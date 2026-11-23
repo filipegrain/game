@@ -9,6 +9,9 @@ const Combat = {
   // opts: { source, melee, crit, skill, knock: {x, y, force}, structureMul, noNumber, lifesteal, color, isAttack }
   dealDamage(target, amount, opts = {}) {
     if (!target || !target.alive || target.invulnerable || target.isBuilding) return 0;   // buildings are immune
+    const src = opts.source;
+    const rage = src && src.isHero ? src.rage : null;   // Warrior Rage
+    if (rage) amount *= rage.damageMul;
     const armor = target.getArmor ? target.getArmor() : (target.armor || 0);
     let dmg = amount * this.armorMul(armor);
     if (target.isStructure && opts.structureMul) dmg *= opts.structureMul;
@@ -28,11 +31,9 @@ const Combat = {
 
     if (opts.knock && target.applyKnock) target.applyKnock(opts.knock.x, opts.knock.y, opts.knock.force);
 
-    const src = opts.source;
-    // lifesteal (hero attacks)
-    if (src && src.isHero && src.alive && opts.isAttack && src.stats.lifesteal > 0) {
-      src.heal(dmg * src.stats.lifesteal);
-    }
+    // lifesteal: hero attacks, or all hero damage during Rage
+    const ls = rage ? rage.lifesteal : src && src.isHero && opts.isAttack ? src.stats.lifesteal : 0;
+    if (ls > 0 && src.alive) src.heal(dmg * ls);
     // thorns (hero hit by melee)
     if (target.isHero && opts.melee && src && src.alive && target.stats.thorns > 0) {
       this.dealDamage(src, dmg * target.stats.thorns, { source: target, noNumber: false, color: '#7cd67c', thorns: true });

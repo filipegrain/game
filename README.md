@@ -1,6 +1,6 @@
 # Castle Defense
 
-A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build towers, upgrade your Keep, buy items, and hold off endless waves that come down three connected lanes. The run ends when the Keep falls.
+A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build towers, upgrade your Keep, pick items as you level up, and hold off endless waves that come down three connected lanes. The run ends when the Keep falls.
 
 All visuals are drawn shapes and all sounds are synthesized. The game uses no image or audio assets.
 
@@ -25,7 +25,7 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 | Right-click | Move (hold to keep following the cursor) / attack a clicked enemy |
 | A + left-click | Attack-move |
 | S | Stop |
-| Q / W / E / R | Aim a skill, then left-click to cast at the cursor (right-click / Esc / same key cancels). War Cry casts on key press. Mage Q toggles Fire Bolt autocast |
+| Q / W / E / R | Mage: aim a skill, then left-click to cast at the cursor (right-click / Esc / same key cancels); Q toggles Fire Bolt autocast. Warrior: Q, W and E are passive; R dashes toward the cursor |
 
 **Camera**
 | Input | Action |
@@ -41,7 +41,6 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 | 1–5 | Place Arrow Tower / Cannon / Frost Tower / Barracks / Gold Mine |
 | Left-click a building | Select it (upgrade, sell) |
 | U | Upgrade the Keep |
-| B | Toggle the shop |
 | F | Rally allies to a spot (press F twice to return them to auto mode) |
 | N / Enter | Start the next wave early (bonus gold) |
 
@@ -53,7 +52,7 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 - **Buildings** can't be damaged; enemies only fight the hero, allies and the Keep. Sappers ignore everything and rush the Keep.
 - **Keep tiers (1–4):** each tier adds HP and more allies, unlocks new buildings, and later gives the Keep its own attack and auto-repair.
 - **Leveling:** no level cap. All skills are available from the start, grow stronger every level, and unlock extra effects at milestone levels. There is no mana, only cooldowns.
-- **Shop:** 6 item slots, one per item type. Buy an item again to level it up. You can buy anytime, anywhere, and items sell back for 50% of what you spent.
+- **Items:** every level-up offers a choice of items. Picking one you own levels it up, and owned items show up more often. There is no slot limit. Gold only buys buildings and Keep tiers.
 - **Score:** based on waves, kills, hero level and time. The best score for each difficulty is saved in your browser.
 
 ## Balance simulation
@@ -66,7 +65,6 @@ The report screen shows waves cleared per hero, strategy and difficulty, plus au
 
 - Plain JavaScript, no modules or build step. Files load in order through `<script>` tags in `index.html`, so add new files there.
 - All balance numbers (stats, costs, cooldowns, wave scaling, difficulty) live in `src/config.js`.
-- `PLAN.md` holds the full design document and milestones.
 
 ```
 src/
@@ -76,5 +74,5 @@ src/
   sim/         balance simulation: runner, bot, recorder, report
   entities/    Unit base, Hero, Enemy, Ally, Building, Keep, Projectile
   heroes/      Warrior and Mage skill kits
-  systems/     waves, pathing (flow field), combat, economy, building, shop, leveling, ally commands, game feel
+  systems/     waves, pathing (flow field), combat, economy, building, item picks, leveling, ally commands, game feel
 ```

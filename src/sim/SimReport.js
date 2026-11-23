@@ -166,7 +166,7 @@ const SimReport = {
     for (const h in rep.skills) for (const k of ['Q', 'W', 'E', 'R']) {
       const s = rep.skills[h].keys[k];
       if (!s) continue;
-      if (h === 'warrior' && k === 'E') continue;   // War Cry deals no damage by design
+      if (h === 'warrior' && (k === 'E' || k === 'W')) continue;   // Bloodthirst and Rage deal no damage of their own
       if (s.share / 100 < F.lowSkillShare) add('low', 'Skills', `${this.heroName(h)} ${k} ${CONFIG.skills[h][k].name}: ${s.share}% of hero damage (${s.casts} casts, ${s.perCast} dmg/cast).`);
     }
     // Keep damage by enemy type
@@ -253,7 +253,7 @@ const SimReport = {
     }));
 
     L.push('## Economy (mean per run)', '');
-    const outCats = ['items', 'keep', 'arrow', 'cannon', 'frost', 'barracks', 'mine'];
+    const outCats = ['keep', 'arrow', 'cannon', 'frost', 'barracks', 'mine'];
     table(['Hero', 'Diff', 'Strategy', 'Earned', 'Bounty', 'Wave clear', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
       const per = (v) => Math.round((v || 0) / c.n);
       return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.waveClear), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));

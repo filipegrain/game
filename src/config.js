@@ -119,26 +119,23 @@ const CONFIG = {
   // milestones unlock extra effects at a hero level.
   skills: {
     warrior: {
-      Q: { name: 'Cleave', cast: 'aim', cd: 4, damage: 60, radius: 115, arc: 100,
-           knock: 340, bleedDps: 22, bleedTime: 3,
-           milestones: [{ id: 'bleed', level: 5, text: 'Enemies hit bleed for 3s' }],
-           desc: 'Wide arc slash toward the cursor. Damage + knockback.' },
-      W: { name: 'Charge', cast: 'aim', cd: 9, damage: 50, range: 300, speed: 1500, width: 22,
-           milestones: [{ id: 'reset', level: 8, text: 'Cooldown resets on kill' }],
-           desc: 'Dash toward the cursor, damaging and pushing enemies.' },
-      E: { name: 'War Cry', cast: 'instant', cd: 16, radius: 260, taunt: 2, armor: 10, buffTime: 4,
-           allyAtkSpeed: 0.3, allyBuffTime: 5, milestones: [],
-           desc: 'Taunt nearby enemies, gain armor. Nearby allies attack faster.' },
-      R: { name: 'Earthshatter', cast: 'aim', cd: 60, damage: 200, radius: 170, range: 460, stun: 1.2, leapTime: 0.45,
-           shockwaveMul: 0.5, shockwaveRadiusMul: 1.7, shockwaveDelay: 0.22,
-           milestones: [{ id: 'shockwave', level: 10, text: 'A second shockwave ring hits farther out (50% dmg)' }],
-           desc: 'Leap to a spot and slam down: big AoE damage and stun.' },
+      // cast 'passive' = no key press; the key only names the HUD slot.
+      // cdStat: hero stat (from items) subtracted from the base cd, floored at minCd.
+      Q: { name: 'Whirl', cast: 'passive', cd: 1, chance: 0.35, radius: 90, knock: 140,
+           desc: 'Basic attacks have a chance to hit every enemy around you for your attack damage. 1s internal cooldown.' },
+      W: { name: 'Rage', cast: 'passive', cd: 80, minCd: 30, cdStat: 'rageCd', threshold: 0.05, duration: 5,
+           lifesteal: 1, damageMul: 2, critBonus: 1.0, fxInterval: 0.08,
+           desc: 'Below 5% HP (or on a killing blow): 5s of 100% lifesteal, double damage, +100% crit damage. Cannot die meanwhile.' },
+      E: { name: 'Bloodthirst', cast: 'passive', perKill: 0.1,
+           desc: 'Gain 0.1 attack damage for every enemy you kill. Kept for the whole run.' },
+      R: { name: 'Dash', cast: 'instant', cd: 12, minCd: 4, cdStat: 'dashCd', range: 200, speed: 1500, width: 22, windCloak: true,
+           desc: 'Dash toward the cursor. Enemies you pass and enemies around the landing spot take a critical Whirl.' },
     },
     mage: {
       Q: { name: 'Fire Bolt', cast: 'auto', cd: 4, damage: 55, aoe: 70, speed: 950, range: 760,
            milestones: [{ id: 'pierce1', level: 4, text: 'Pierces 1 enemy' }, { id: 'pierce2', level: 8, text: 'Pierces 2 enemies' }],
            desc: 'Autocasts at the enemy you are attacking. Explodes on hit. Q toggles autocast.' },
-      W: { name: 'Poison Pool', cast: 'aim', cd: 9, dps: 30, radius: 110, duration: 5, range: 450, tick: 0.5, slow: 0.7,
+      W: { name: 'Poison Pool', cast: 'aim', windCloak: true, cd: 9, dps: 30, radius: 110, duration: 5, range: 450, tick: 0.5, slow: 0.7,
            milestones: [{ id: 'slow', level: 6, text: 'Pool also slows enemies by 30%' }],
            desc: 'Poison the ground at the cursor: damage per second to enemies inside.' },
       E: { name: 'Deep Freeze', cast: 'aim', cd: 12, damage: 30, radius: 160, range: 500, freeze: 1.5, shatterDamage: 60,
@@ -194,26 +191,32 @@ const CONFIG = {
   },
 
   // ---------------------------------------------------------------- ITEMS
+  // Gained on level-up: pick 1 of itemPickCount random items. Picking an owned item levels it up (stats add again).
+  // `hero` limits an item to one hero's pool.
   items: {
-    sword:   { name: 'Iron Sword',      cost: 250, color: 0xc0c6d0, shape: 'triangle', stats: { damage: 12 },               desc: '+12 damage' },
-    gloves:  { name: 'Swift Gloves',    cost: 250, color: 0xf2c14e, shape: 'circle',   stats: { attackSpeed: 0.2 },         desc: '+20% attack speed' },
-    boots:   { name: 'Leather Boots',   cost: 200, color: 0x9a6b3f, shape: 'square',   stats: { speed: 35 },                desc: '+35 move speed' },
-    plate:   { name: 'Plate Armor',     cost: 450, color: 0x7d8696, shape: 'square',   stats: { armor: 8, hp: 150 },        desc: '+8 armor, +150 HP' },
-    heart:   { name: 'Heart Crystal',   cost: 300, color: 0xff5a7a, shape: 'diamond',  stats: { hp: 120, hpRegen: 4 },     desc: '+120 HP, +4 HP/s' },
-    hourglass: { name: 'Hourglass',     cost: 600, color: 0xe8d9a0, shape: 'hexagon',  stats: { cdr: 0.15 },                desc: '-15% cooldowns' },
-    fang:    { name: 'Vampire Fang',    cost: 550, color: 0xb0213a, shape: 'triangle', stats: { lifesteal: 0.15 },          desc: '15% lifesteal on attacks' },
-    storm:   { name: 'Storm Blade',     cost: 900, color: 0x7ee8ff, shape: 'diamond',  stats: { damage: 8, chain: 2 },      desc: 'Attacks chain to 2 more enemies (60%)' },
-    thorns:  { name: 'Thorn Mail',      cost: 750, color: 0x4f8a3a, shape: 'hexagon',  stats: { armor: 5, thorns: 0.35 },   desc: '+5 armor, reflect 35% melee damage' },
-    phoenix: { name: 'Phoenix Feather', cost: 800, color: 0xff7a2a, shape: 'triangle', stats: { revive: 1 },                desc: 'Auto-revive once per level (consumes a level)' },
-    focus:   { name: 'Arcane Focus',    cost: 700, color: 0xc77dff, shape: 'circle',   stats: { skillDamage: 0.25 },        desc: '+25% skill damage' },
-    cloak:   { name: 'Wind Cloak',      cost: 450, color: 0x9be8c9, shape: 'diamond',  stats: { speed: 15, windCloak: 0.4 },desc: '+15 speed. After W: +40% speed for 2s' },
+    sword:   { name: 'Iron Sword',      color: 0xc0c6d0, shape: 'triangle', stats: { damage: 12 },               desc: '+12 damage' },
+    gloves:  { name: 'Swift Gloves',    color: 0xf2c14e, shape: 'circle',   stats: { attackSpeed: 0.2 },         desc: '+20% attack speed' },
+    boots:   { name: 'Leather Boots',   color: 0x9a6b3f, shape: 'square',   stats: { speed: 35 },                desc: '+35 move speed' },
+    plate:   { name: 'Plate Armor',     color: 0x7d8696, shape: 'square',   stats: { armor: 8, hp: 150 },        desc: '+8 armor, +150 HP' },
+    heart:   { name: 'Heart Crystal',   color: 0xff5a7a, shape: 'diamond',  stats: { hp: 120, hpRegen: 4 },     desc: '+120 HP, +4 HP/s' },
+    hourglass: { name: 'Hourglass',     color: 0xe8d9a0, shape: 'hexagon',  stats: { cdr: 0.15 },                desc: '-15% cooldowns' },
+    fang:    { name: 'Vampire Fang',    color: 0xb0213a, shape: 'triangle', stats: { lifesteal: 0.15 },          desc: '15% lifesteal on attacks' },
+    storm:   { name: 'Storm Blade',     color: 0x7ee8ff, shape: 'diamond',  stats: { damage: 8, chain: 2 },      desc: 'Attacks chain to 2 more enemies (60%)' },
+    thorns:  { name: 'Thorn Mail',      color: 0x4f8a3a, shape: 'hexagon',  stats: { armor: 5, thorns: 0.35 },   desc: '+5 armor, reflect 35% melee damage' },
+    phoenix: { name: 'Phoenix Feather', color: 0xff7a2a, shape: 'triangle', stats: { revive: 1 },                desc: 'Revive at 50% HP instead of dying. Cooldown 180s / level' },
+    focus:   { name: 'Arcane Focus',    color: 0xc77dff, shape: 'circle',   stats: { skillDamage: 0.25 },        desc: '+25% skill damage' },
+    cloak:   { name: 'Wind Cloak',      color: 0x9be8c9, shape: 'diamond',  stats: { speed: 15, windCloak: 0.4 },desc: '+15 speed. After Dash (Warrior) / Poison Pool (Mage): +40% speed for 2s' },
+    whirl:   { name: 'Whirl Edge',      color: 0x9cc8ff, shape: 'circle',   hero: 'warrior', stats: { whirlChance: 0.1, whirlRadius: 0.1 }, desc: 'Whirl: +10% chance, +10% radius' },
+    greaves: { name: 'Charger Greaves', color: 0x6a8fd0, shape: 'square',   hero: 'warrior', stats: { dashRange: 0.15, dashCd: 1 },     desc: 'Dash: +15% range, -1s cooldown (min 4s)' },
+    trophy:  { name: 'Trophy Belt',     color: 0xd8a03a, shape: 'hexagon',  hero: 'warrior', stats: { killDamage: 0.05 },               desc: 'Bloodthirst: +0.05 damage per kill' },
+    mask:    { name: 'Berserker Mask',  color: 0xd02020, shape: 'triangle', hero: 'warrior', stats: { rageTime: 1, rageCd: 8 },         desc: 'Rage: +1s duration, -8s cooldown (min 30s)' },
   },
-  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'heart', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak'],
-  inventorySlots: 6,
-  itemSellRefund: 0.5,
-  // Buying an owned item levels it up: stats add again each level.
-  itemLevelCostMul: 0.5,    // next level costs base × (1 + this × current level)
+  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'heart', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak', 'whirl', 'greaves', 'trophy', 'mask'],
+  itemPickCount: 3,
+  itemPickOwnedWeight: 1,   // pick weight = 1 + item level x this (owned items show up more)
   itemCaps: { cdr: 0.4, lifesteal: 0.5 },
+  phoenixCooldown: 180,     // s, divided by Phoenix level
+  windCloakTime: 2,         // s of Wind Cloak speed after a windCloak skill
 
   // ---------------------------------------------------------------- FEEL
   feel: {
@@ -241,12 +244,8 @@ const CONFIG = {
       retreatHp: 0.3,        // fall back to the Keep below this HP fraction...
       resumeHp: 0.65,        // ...and return to the fight above this one
       warrior: {
-        cleaveMin: 2,          // enemies inside the arc
-        chargeMinDist: 160,    // gap-close when the focus enemy is farther than this...
-        chargeCluster: 3,      // ...or dash through a cluster this big
-        warCryMin: 3,          // enemies inside the radius
-        warCryLowHp: 0.5,      // or below this HP with any enemy near
-        ultMin: 6,             // enemies under Earthshatter (or any boss in range)
+        dashMinDist: 120,      // Dash toward the focus enemy when it is farther than this...
+        dashCluster: 3,        // ...or through a cluster this big
       },
       mage: {
         poolMin: 3,
@@ -256,21 +255,21 @@ const CONFIG = {
       },
     },
 
-    // Item build per hero: buy in order until the inventory is full, then level the lowest-level item.
+    // Item pick priority per hero: on level-up the bot takes the first offered item in this list (else the first offered).
     itemBuilds: {
-      warrior: ['sword', 'plate', 'gloves', 'fang', 'heart', 'thorns'],
-      mage: ['focus', 'gloves', 'hourglass', 'heart', 'sword', 'storm'],
+      warrior: ['sword', 'whirl', 'plate', 'gloves', 'fang', 'trophy', 'heart', 'mask', 'thorns', 'greaves', 'storm', 'hourglass', 'focus', 'phoenix', 'boots', 'cloak'],
+      mage: ['focus', 'gloves', 'hourglass', 'heart', 'sword', 'storm', 'fang', 'plate', 'phoenix', 'boots', 'thorns', 'cloak'],
     },
 
     // Spending policies. The bot runs `opening` once, then repeats `loop`, saving up for each step.
-    // Steps: 'item' | 'keep' | 'arrow' | 'cannon' | 'frost' (upgrade an existing one of that type if possible, else build)
+    // Steps: 'keep' | 'arrow' | 'cannon' | 'frost' (upgrade an existing one of that type if possible, else build)
     //        | 'barracks' | 'mine' (build, else upgrade). Locked / impossible steps are skipped.
     strategies: {
-      carry:    { label: 'Hero carry', hero: 'active', opening: [], loop: ['item'] },
-      turtle:   { label: 'Turtle',     hero: 'active', opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow', 'item'] },
-      economy:  { label: 'Economy',    hero: 'active', opening: ['arrow', 'keep', 'keep', 'mine', 'mine', 'mine'], loop: ['item', 'arrow', 'mine', 'cannon', 'keep', 'item', 'frost'] },
-      keepRush: { label: 'Keep rush',  hero: 'active', opening: ['keep', 'keep', 'keep', 'barracks', 'barracks'], loop: ['barracks', 'item', 'arrow', 'cannon', 'item'] },
-      balanced: { label: 'Balanced',   hero: 'active', opening: ['arrow', 'item', 'keep', 'arrow', 'item'], loop: ['cannon', 'item', 'keep', 'arrow', 'item', 'frost', 'item'] },
+      carry:    { label: 'Hero only',  hero: 'active', opening: [], loop: [] },
+      turtle:   { label: 'Turtle',     hero: 'active', opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow'] },
+      economy:  { label: 'Economy',    hero: 'active', opening: ['arrow', 'keep', 'keep', 'mine', 'mine', 'mine'], loop: ['arrow', 'mine', 'cannon', 'keep', 'frost'] },
+      keepRush: { label: 'Keep rush',  hero: 'active', opening: ['keep', 'keep', 'keep', 'barracks', 'barracks'], loop: ['barracks', 'arrow', 'cannon'] },
+      balanced: { label: 'Balanced',   hero: 'active', opening: ['arrow', 'keep', 'arrow'], loop: ['cannon', 'keep', 'arrow', 'frost'] },
       idle:     { label: 'Idle hero',  hero: 'idle',   opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow'] },
     },
 

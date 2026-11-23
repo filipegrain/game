@@ -42,5 +42,6 @@ class Leveling {
       for (const m of h.skillDefs[k].milestones || []) if (m.level === h.level) unlocked.push(h.skillDefs[k].name + ': ' + m.text);
     }
     this.scene.events.emit('levelUp', h.level, unlocked);
+    this.scene.picks.grant();
   }
 }

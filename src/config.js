@@ -3,7 +3,7 @@
 
 const CONFIG = {
   TILE: 32,
-  MAP_W: 80,          // tiles
+  MAP_W: 96,          // tiles
   MAP_H: 45,          // tiles
   VIEW_W: 1280,
   VIEW_H: 720,
@@ -19,22 +19,21 @@ const CONFIG = {
   map: {
     keep: { x: 2, y: 20, w: 5, h: 5 },
     paths: [
-      { x: 8, y: 6, w: 72, h: 4 },    // top lane
-      { x: 7, y: 20, w: 73, h: 5 },   // mid lane
-      { x: 8, y: 35, w: 72, h: 4 },   // bottom lane
-      { x: 8, y: 6, w: 4, h: 33 },    // left corridor joining the lanes to the Keep
+      { x: 28, y: 7, w: 68, h: 3 },   // top lane
+      { x: 28, y: 21, w: 68, h: 3 },  // mid lane
+      { x: 28, y: 35, w: 68, h: 3 },  // bottom lane
+      { x: 7, y: 6, w: 21, h: 33 },   // plaza in front of the Keep, joining the lanes
     ],
     connectors: [                     // always open, never buildable
-      { x: 34, y: 10, w: 3, h: 10 }, { x: 34, y: 25, w: 3, h: 10 },
-      { x: 58, y: 10, w: 3, h: 10 }, { x: 58, y: 25, w: 3, h: 10 },
+      { x: 50, y: 10, w: 3, h: 11 }, { x: 50, y: 24, w: 3, h: 11 },
+      { x: 74, y: 10, w: 3, h: 11 }, { x: 74, y: 24, w: 3, h: 11 },
     ],
-    spawnZoneX: 74,       // lane tiles with x >= this are not buildable
-    keepNoBuildX: 9,      // lane tiles with x < this are not buildable (Keep entrance)
+    spawnZoneX: 90,       // lane tiles with x >= this are not buildable
     towerAdjacency: 2,    // towers must be within this many tiles of a lane
     lanes: [              // tile coordinates
-      { id: 0, name: 'TOP', spawn: { x: 78.5, y: 8 },    post: { x: 13.5, y: 8 } },
-      { id: 1, name: 'MID', spawn: { x: 78.5, y: 22.5 }, post: { x: 15.5, y: 22.5 } },
-      { id: 2, name: 'BOT', spawn: { x: 78.5, y: 37 },   post: { x: 13.5, y: 37 } },
+      { id: 0, name: 'TOP', spawn: { x: 94.5, y: 8.5 },  post: { x: 30.5, y: 8.5 } },
+      { id: 1, name: 'MID', spawn: { x: 94.5, y: 22.5 }, post: { x: 30.5, y: 22.5 } },
+      { id: 2, name: 'BOT', spawn: { x: 94.5, y: 36.5 }, post: { x: 30.5, y: 36.5 } },
     ],
     laneSplitTop: 14,     // tile y below which a unit counts as "top lane"
     laneSplitBot: 30,     // tile y above which a unit counts as "bottom lane"
@@ -50,8 +49,8 @@ const CONFIG = {
   // ---------------------------------------------------------------- WAVES
   waves: {
     firstBuildBonus: 10,       // extra seconds before wave 1
-    baseCount: 7,
-    countPerWave: 2.6,
+    baseCount: 21,
+    countPerWave: 7.8,
     hpLinear: 0.12,            // hp mul = (1 + hpLinear*e) * hpExp^e, e = (wave-1) * scaling
     hpExp: 1.075,
     dmgPerWave: 0.07,
@@ -60,8 +59,8 @@ const CONFIG = {
     bossEvery: 5,
     unlocks: { grunt: 1, runner: 2, brute: 3, archer: 4, sapper: 6, shaman: 8 },
     weights: { grunt: 10, runner: 5, brute: 3, archer: 4, sapper: 2, shaman: 1.5 },
-    spawnInterval: 0.9,        // seconds between spawns in one lane
-    groupSize: [3, 6],         // spawns come in groups
+    spawnInterval: 0.3,        // seconds between spawns in one lane
+    groupSize: [9, 18],        // spawns come in groups
     groupPause: 2.2,           // pause between groups
     clearGoldBase: 40,
     clearGoldPerWave: 8,
@@ -73,14 +72,14 @@ const CONFIG = {
 
   // ---------------------------------------------------------------- ENEMIES
   enemies: {
-    grunt:  { name: 'Grunt',  shape: 'circle',   color: 0xd94040, radius: 11, hp: 70,   speed: 92,  damage: 10, range: 22,  rate: 1.0, armor: 0, aggro: 160, gold: 5,   xp: 12 },
-    runner: { name: 'Runner', shape: 'triangle', color: 0xff5a5a, radius: 9,  hp: 40,   speed: 155, damage: 6,  range: 20,  rate: 1.4, armor: 0, aggro: 140, gold: 4,   xp: 10 },
-    brute:  { name: 'Brute',  shape: 'square',   color: 0x8b1a1a, radius: 16, hp: 280,  speed: 58,  damage: 26, range: 24,  rate: 0.7, armor: 6, aggro: 150, gold: 14,  xp: 30 },
-    archer: { name: 'Archer', shape: 'diamond',  color: 0xe0505a, radius: 10, hp: 55,   speed: 84,  damage: 10, range: 220, rate: 0.8, armor: 0, aggro: 240, gold: 7,   xp: 15, ranged: true, projSpeed: 520 },
-    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 95,   speed: 86,  damage: 12, range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 9,   xp: 18, structureMul: 4, keepBreaker: true },   // ignores hero/allies, rushes the Keep
-    shaman: { name: 'Shaman', shape: 'circle',   color: 0x9b4dca, radius: 12, hp: 120,  speed: 70,  damage: 8,  range: 180, rate: 0.7, armor: 1, aggro: 200, gold: 12,  xp: 25, ranged: true, projSpeed: 420,
+    grunt:  { name: 'Grunt',  shape: 'circle',   color: 0xd94040, radius: 11, hp: 35,   speed: 138, damage: 3,  range: 22,  rate: 1.0, armor: 0, aggro: 160, gold: 2,   xp: 4 },
+    runner: { name: 'Runner', shape: 'triangle', color: 0xff5a5a, radius: 9,  hp: 20,   speed: 233, damage: 2,  range: 20,  rate: 1.4, armor: 0, aggro: 140, gold: 1,   xp: 3 },
+    brute:  { name: 'Brute',  shape: 'square',   color: 0x8b1a1a, radius: 16, hp: 140,  speed: 87,  damage: 9,  range: 24,  rate: 0.7, armor: 6, aggro: 150, gold: 5,   xp: 10 },
+    archer: { name: 'Archer', shape: 'diamond',  color: 0xe0505a, radius: 10, hp: 28,   speed: 126, damage: 3,  range: 220, rate: 0.8, armor: 0, aggro: 240, gold: 2,   xp: 5, ranged: true, projSpeed: 520 },
+    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 48,   speed: 129, damage: 4,  range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 3,   xp: 6, structureMul: 4, keepBreaker: true },   // ignores hero/allies, rushes the Keep
+    shaman: { name: 'Shaman', shape: 'circle',   color: 0x9b4dca, radius: 12, hp: 60,   speed: 105, damage: 3,  range: 180, rate: 0.7, armor: 1, aggro: 200, gold: 4,   xp: 8, ranged: true, projSpeed: 420,
               healEvery: 2.5, healRadius: 170, healPct: 0.08, hasteMul: 1.25, hasteTime: 3 },
-    boss:   { name: 'Boss',   shape: 'hexagon',  color: 0xc81e1e, radius: 30, hp: 2600, speed: 46,  damage: 55, range: 30,  rate: 0.6, armor: 8, aggro: 200, gold: 150, xp: 300,
+    boss:   { name: 'Boss',   shape: 'hexagon',  color: 0xc81e1e, radius: 30, hp: 2600, speed: 69,  damage: 55, range: 30,  rate: 0.6, armor: 8, aggro: 200, gold: 150, xp: 300,
               structureMul: 2, slamEvery: 6.5, slamRadius: 160, slamDamage: 110, slamWindup: 1.0, slamStun: 0.8 },
   },
 
@@ -157,9 +156,9 @@ const CONFIG = {
   // ---------------------------------------------------------------- KEEP & ALLIES
   keep: {
     tiers: [
-      { cost: 0,   hp: 1600, spawnEvery: 8,   maxAllies: 4,  attack: null,                                    archers: false, buildRadius: 24, repair: 0 },
-      { cost: 300, hp: 2400, spawnEvery: 7.5, maxAllies: 6,  attack: { damage: 22, range: 360, rate: 1.0, shots: 1 }, archers: false, buildRadius: 36, repair: 0 },
-      { cost: 550, hp: 3400, spawnEvery: 7,   maxAllies: 8,  attack: { damage: 30, range: 380, rate: 1.2, shots: 1 }, archers: true,  buildRadius: 52, repair: 0 },
+      { cost: 0,   hp: 1600, spawnEvery: 8,   maxAllies: 4,  attack: null,                                    archers: false, buildRadius: 40, repair: 0 },
+      { cost: 300, hp: 2400, spawnEvery: 7.5, maxAllies: 6,  attack: { damage: 22, range: 360, rate: 1.0, shots: 1 }, archers: false, buildRadius: 52, repair: 0 },
+      { cost: 550, hp: 3400, spawnEvery: 7,   maxAllies: 8,  attack: { damage: 30, range: 380, rate: 1.2, shots: 1 }, archers: true,  buildRadius: 68, repair: 0 },
       { cost: 900, hp: 4800, spawnEvery: 6,   maxAllies: 10, attack: { damage: 48, range: 420, rate: 1.5, shots: 2 }, archers: true,  buildRadius: 99, repair: 10 },
     ],
     archerEvery: 3,     // every Nth spawn is an archer (tier 3+)

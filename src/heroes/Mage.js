@@ -7,6 +7,7 @@ class MageKit {
     this.S = CONFIG.skills.mage;
     this.autoQ = true;
     this.pools = [];
+    this.meteors = [];
   }
 
   get busy() { return false; }
@@ -54,7 +55,7 @@ class MageKit {
     const pierce = h.hasMilestone('Q', 'pierce2') ? 2 : h.hasMilestone('Q', 'pierce1') ? 1 : 0;
     const explode = (px, py) => {
       for (const e of Combat.enemiesInRadius(px, py, aoe)) {
-        Combat.dealDamage(e, dmg, { source: h, skill: true, color: '#ffb36b', knock: { x: e.x - px, y: e.y - py, force: 140 } });
+        Combat.dealDamage(e, dmg, { source: h, skill: 'Q', color: '#ffb36b', knock: { x: e.x - px, y: e.y - py, force: 140 } });
       }
       Feel.ring(px, py, aoe, 0xff7a2a, { duration: 260, width: 4, fill: true });
       Feel.burst(px, py, 0xff7a2a, 12);
@@ -94,7 +95,7 @@ class MageKit {
       if (p.tickT <= 0) {
         p.tickT += s.tick;
         for (const e of Combat.enemiesInRadius(p.x, p.y, p.r)) {
-          Combat.dealDamage(e, p.dmg, { source: h, skill: true, color: '#9be86a' });
+          Combat.dealDamage(e, p.dmg, { source: h, skill: 'W', color: '#9be86a' });
           if (e.alive && p.slow) e.applySlow(s.slow, s.tick + 0.15);
         }
       }
@@ -124,7 +125,7 @@ class MageKit {
     const shatter = h.hasMilestone('E', 'shatter');
     const frozen = [];
     for (const e of Combat.enemiesInRadius(c.x, c.y, r)) {
-      Combat.dealDamage(e, dmg, { source: h, skill: true, color: '#9fe9ff' });
+      Combat.dealDamage(e, dmg, { source: h, skill: 'E', color: '#9fe9ff' });
       if (!e.alive) continue;
       e.applyStun(t, true);
       frozen.push(e);
@@ -135,7 +136,7 @@ class MageKit {
       this.scene.later(t, () => {
         for (const e of frozen) {
           if (!e.alive) continue;
-          Combat.dealDamage(e, sd, { source: h, skill: true, color: '#cff6ff' });
+          Combat.dealDamage(e, sd, { source: h, skill: 'E', color: '#cff6ff' });
           Feel.burst(e.x, e.y, 0xcff6ff, 8);
         }
         Sfx.play('frost');
@@ -177,38 +178,43 @@ class MageKit {
     Sfx.play('cry');
   }
 
+  // Impact timing runs on game time (pause, hitstop and the balance sim all respect it).
   meteor(x, y, r, dmg, warn) {
-    const sc = this.scene, h = this.hero;
-    const g = sc.add.graphics().setDepth(8);
-    const st = { p: 0 };
-    const draw = () => {
-      g.clear();
-      g.fillStyle(0xff3020, 0.1 + 0.2 * st.p); g.fillCircle(x, y, r);
-      g.lineStyle(2, 0xff5030, 0.85); g.strokeCircle(x, y, r);
-      g.fillStyle(0xff5030, 0.3); g.fillCircle(x, y, r * st.p);
-      // falling rock
-      const fy = y - 260 * (1 - st.p), fx = x + 120 * (1 - st.p);
-      g.fillStyle(0xffb36b, 1); g.fillCircle(fx, fy, 9);
-      g.fillStyle(0xff5030, 0.5); g.fillCircle(fx + 8, fy - 10, 6);
-    };
-    draw();
-    sc.tweens.add({
-      targets: st, p: 1, duration: warn * 1000, ease: 'Quad.easeIn', onUpdate: draw,
-      onComplete: () => {
-        g.destroy();
-        for (const e of Combat.enemiesInRadius(x, y, r)) {
-          Combat.dealDamage(e, dmg, { source: h, skill: true, color: '#ffb36b', knock: { x: e.x - x, y: e.y - y, force: 160 } });
-        }
-        Feel.ring(x, y, r, 0xff7a2a, { duration: 300, width: 6, fill: true });
-        Feel.burst(x, y, 0xff5030, 14);
-        Feel.burst(x, y, 0x5a3a2a, 8);
-        Feel.shake(0.006, 100);
-        Sfx.play('meteor');
-      },
-    });
+    this.meteors.push({ x, y, r, dmg, warn, t: 0, g: this.scene.add.graphics().setDepth(8) });
   }
 
-  update(dt) { this.updatePools(dt); }
+  updateMeteors(dt) {
+    const h = this.hero;
+    for (const m of this.meteors) {
+      m.t += dt;
+      const k = Math.min(1, m.t / m.warn), p = k * k;   // Quad ease-in
+      const g = m.g;
+      g.clear();
+      if (k < 1) {
+        g.fillStyle(0xff3020, 0.1 + 0.2 * p); g.fillCircle(m.x, m.y, m.r);
+        g.lineStyle(2, 0xff5030, 0.85); g.strokeCircle(m.x, m.y, m.r);
+        g.fillStyle(0xff5030, 0.3); g.fillCircle(m.x, m.y, m.r * p);
+        // falling rock
+        const fy = m.y - 260 * (1 - p), fx = m.x + 120 * (1 - p);
+        g.fillStyle(0xffb36b, 1); g.fillCircle(fx, fy, 9);
+        g.fillStyle(0xff5030, 0.5); g.fillCircle(fx + 8, fy - 10, 6);
+        continue;
+      }
+      g.destroy();
+      m.done = true;
+      for (const e of Combat.enemiesInRadius(m.x, m.y, m.r)) {
+        Combat.dealDamage(e, m.dmg, { source: h, skill: 'R', color: '#ffb36b', knock: { x: e.x - m.x, y: e.y - m.y, force: 160 } });
+      }
+      Feel.ring(m.x, m.y, m.r, 0xff7a2a, { duration: 300, width: 6, fill: true });
+      Feel.burst(m.x, m.y, 0xff5030, 14);
+      Feel.burst(m.x, m.y, 0x5a3a2a, 8);
+      Feel.shake(0.006, 100);
+      Sfx.play('meteor');
+    }
+    if (this.meteors.some(m => m.done)) this.meteors = this.meteors.filter(m => !m.done);
+  }
+
+  update(dt) { this.updatePools(dt); this.updateMeteors(dt); }
 
   drawIndicator(g, key, mx, my) {
     const h = this.hero;

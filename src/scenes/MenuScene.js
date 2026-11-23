@@ -45,6 +45,17 @@ class MenuScene extends Phaser.Scene {
     start.on('pointerdown', () => this.startGame());
     this.input.keyboard.on('keydown-ENTER', () => this.startGame());
 
+    // balance simulation
+    const small = (x, label, fn) => {
+      const r = this.add.rectangle(x, 577, 170, 40, 0x1f2937).setOrigin(0).setStrokeStyle(2, 0x4b5563).setInteractive({ useHandCursor: true });
+      this.add.text(x + 85, 597, label, { fontFamily: FONT, fontSize: '15px', color: '#cbd5e1', fontStyle: 'bold' }).setOrigin(0.5);
+      r.on('pointerover', () => r.setFillStyle(0x374151));
+      r.on('pointerout', () => r.setFillStyle(0x1f2937));
+      r.on('pointerdown', () => { Sfx.resume(); Sfx.play('click'); fn(); });
+    };
+    small(330, 'Simulate', () => this.scene.start('SimSetupScene'));
+    if (SimReport.load()) small(780, 'Last report', () => this.scene.start('SimReportScene'));
+
     this.add.text(640, 660, 'Right-click move · QWER aim + left-click cast · V build · B shop · U upgrade Keep · F rally · hold Space look around · P pause',
       { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);
     this.add.text(640, 684, 'All skills unlocked from the start and grow stronger every level.   Sound: M.', { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);

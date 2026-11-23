@@ -44,4 +44,6 @@ There is no build step, package manager, linter or test suite. Phaser 3.80.1 loa
 
 **Camera** is locked on the hero (on the Keep while dead); holding Space enables free look.
 
+**Balance simulation** (`src/sim/`, `SimScenes.js`; Menu → Simulate): `SimRunner` restarts `GameScene` with `data.sim`, where `SimBot` replaces input and `SimRecorder` collects stats, and steps it in fixed ticks with `Feel`/`Sfx` off and `Math.random` seeded. Keep it working when changing gameplay: tag skill damage with its key (`skill: 'Q'`), keep gameplay timing on `scene.timers`/`update(dt)` rather than tweens or Phaser timers, and add new spending options to `SimBot.resolve` and `CONFIG.sim.strategies`.
+
 **Persistence:** best score per difficulty in `localStorage` under `cd_best_<difficulty>`.

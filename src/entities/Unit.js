@@ -85,7 +85,7 @@ class Unit {
       s.bleedTick -= dt;
       if (s.bleedTick <= 0) {
         s.bleedTick = 0.5;
-        Combat.dealDamage(this, s.bleedDps * 0.5, { source: this.scene.hero, color: '#ff4d6d', skill: true });
+        Combat.dealDamage(this, s.bleedDps * 0.5, { source: this.scene.hero, color: '#ff4d6d', skill: 'Q' });
         if (this.alive) Feel.burst(this.x, this.y, 0xb0213a, 3);
       }
     }
@@ -150,6 +150,7 @@ class Unit {
   edgeDist(x, y) { return Math.hypot(this.x - x, this.y - y) - this.radius; }
 
   syncGfx() {
+    if (!this.gfx) return;   // destroyed mid-update (e.g. killed by Thorn Mail while attacking)
     this.gfx.setPosition(this.x, this.y);
     if (this.rotates) this.gfx.setRotation(this.facing);
   }

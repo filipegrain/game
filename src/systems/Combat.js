@@ -13,6 +13,7 @@ const Combat = {
     let dmg = amount * this.armorMul(armor);
     if (target.isStructure && opts.structureMul) dmg *= opts.structureMul;
     dmg = Math.max(1, Math.round(dmg));
+    const hpBefore = target.hp;
     target.hp -= dmg;
     if (target.onDamaged) target.onDamaged(dmg, opts);
 
@@ -34,13 +35,17 @@ const Combat = {
     }
     // thorns (hero hit by melee)
     if (target.isHero && opts.melee && src && src.alive && target.stats.thorns > 0) {
-      this.dealDamage(src, dmg * target.stats.thorns, { source: target, noNumber: false, color: '#7cd67c' });
+      this.dealDamage(src, dmg * target.stats.thorns, { source: target, noNumber: false, color: '#7cd67c', thorns: true });
     }
 
+    let killed = false;
     if (target.hp <= 0 && target.alive) {
       target.hp = 0;
       target.die(src);
+      killed = !target.alive;
     }
+    // balance simulation: attribute damage and kills to their source
+    if (this.scene.recorder) this.scene.recorder.onDamage(target, Math.min(dmg, Math.max(0, hpBefore)), opts, killed);
     return dmg;
   },
 

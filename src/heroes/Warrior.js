@@ -43,7 +43,7 @@ class WarriorKit {
     for (const e of Combat.enemiesInRadius(h.x, h.y, r)) {
       const a = Math.atan2(e.y - h.y, e.x - h.x);
       if (Math.abs(Combat.angleDiff(ang, a)) > arc / 2 + 0.15) continue;
-      Combat.dealDamage(e, dmg, { source: h, skill: true, knock: { x: e.x - h.x, y: e.y - h.y, force: s.knock } });
+      Combat.dealDamage(e, dmg, { source: h, skill: 'Q', knock: { x: e.x - h.x, y: e.y - h.y, force: s.knock } });
       if (e.alive && bleed) e.applyBleed(h.skillDamage(s.bleedDps), h.skillDuration(s.bleedTime));
       Feel.burst(e.x, e.y, 0xffffff, 4);
       hits++;
@@ -126,7 +126,7 @@ class WarriorKit {
       // push sideways out of the path
       const side = (e.x - h.x) * -D.diry + (e.y - h.y) * D.dirx >= 0 ? 1 : -1;
       const px = -D.diry * side, py = D.dirx * side;
-      Combat.dealDamage(e, D.dmg, { source: h, skill: true, knock: { x: px + D.dirx * 0.8, y: py + D.diry * 0.8, force: 420 } });
+      Combat.dealDamage(e, D.dmg, { source: h, skill: 'W', knock: { x: px + D.dirx * 0.8, y: py + D.diry * 0.8, force: 420 } });
       if (!e.alive) D.kills++;
       Feel.burst(e.x, e.y, 0xffffff, 6);
       if (!D.impact) { D.impact = true; Feel.hitstop(CONFIG.feel.hitstop.charge); Feel.shake(0.006, 110); Sfx.play('hit'); }
@@ -170,7 +170,7 @@ class WarriorKit {
       const hit = new Set();
       for (const en of Combat.enemiesInRadius(h.x, h.y, r)) {
         hit.add(en);
-        Combat.dealDamage(en, dmg, { source: h, skill: true, knock: { x: en.x - h.x, y: en.y - h.y, force: 300 } });
+        Combat.dealDamage(en, dmg, { source: h, skill: 'R', knock: { x: en.x - h.x, y: en.y - h.y, force: 300 } });
         if (en.alive) en.applyStun(stun);
       }
       if (h.hasMilestone('R', 'shockwave')) {
@@ -178,7 +178,7 @@ class WarriorKit {
         this.scene.later(s.shockwaveDelay, () => {
           for (const en of Combat.enemiesInRadius(cx, cy, r2)) {
             if (hit.has(en)) continue;
-            Combat.dealDamage(en, dmg * s.shockwaveMul, { source: h, skill: true, knock: { x: en.x - cx, y: en.y - cy, force: 260 } });
+            Combat.dealDamage(en, dmg * s.shockwaveMul, { source: h, skill: 'R', knock: { x: en.x - cx, y: en.y - cy, force: 260 } });
           }
           Feel.ring(cx, cy, r2, 0xffb347, { from: r, duration: 350, width: 6 });
           Feel.shake(0.008, 160);

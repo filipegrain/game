@@ -109,7 +109,8 @@ class WaveManager {
         const T = CONFIG.TILE;
         const laneDef = CONFIG.map.paths[lq.lane === 0 ? 0 : lq.lane === 1 ? 1 : 2];
         const y = Phaser.Math.Clamp(sp.y + (Math.random() - 0.5) * (laneDef.h - 1) * T, laneDef.y * T + 14, (laneDef.y + laneDef.h) * T - 14);
-        this.scene.spawnEnemy(it.type, sp.x + Math.random() * 20, y, this.curMods);
+        const e = this.scene.spawnEnemy(it.type, sp.x + Math.random() * 20, y, this.curMods);
+        e.lane = lq.lane;
         this.spawned++;
       }
     }
@@ -124,6 +125,7 @@ class WaveManager {
     let mineGold = 0;
     for (const b of this.scene.buildings) if (b.alive && b.type === 'mine') { mineGold += b.def.income[b.level - 1]; Feel.floatText(b.x, b.y - 16, '+' + b.def.income[b.level - 1] + 'g', '#ffd23f', 14, 1000); }
     this.scene.economy.add(gold + mineGold);
+    if (this.scene.recorder) { this.scene.recorder.goldEarned('waveClear', gold); this.scene.recorder.goldEarned('mines', mineGold); }
     this.scene.leveling.addXp(W.clearXpBase + W.clearXpPerWave * n);
     this.scene.stats.wavesCleared = n;
     this.phase = 'build';

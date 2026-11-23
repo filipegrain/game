@@ -382,6 +382,7 @@ class Hero extends Unit {
         Feel.floatText(this.x, this.y - 30, 'REVIVED!', '#ff9a4a', 22);
         Sfx.play('levelup');
         this.scene.events.emit('inventoryChanged');
+        this.scene.events.emit('heroRevived');
         return;
       }
     }
@@ -393,6 +394,7 @@ class Hero extends Unit {
     Feel.burst(this.x, this.y, this.color, 30);
     Feel.shake(0.008, 250);
     Sfx.play('heroDeath');
+    this.scene.events.emit('heroDied');
     this.scene.events.emit('notice', 'Hero down! Respawning in ' + Math.ceil(this.respawnT) + 's');
   }
 

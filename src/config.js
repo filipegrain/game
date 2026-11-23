@@ -222,6 +222,69 @@ const CONFIG = {
   },
 
   score: { perWave: 100, perKill: 2, perLevel: 50, perSecond: 0.5 },
+
+  // ---------------------------------------------------------------- BALANCE SIMULATION
+  // Menu → Simulate. A bot plays every selected hero × difficulty × strategy × seed in the real GameScene.
+  sim: {
+    step: 1 / 30,            // fixed sim tick (s). Kept below the game's 0.05 clamp so Charge/skillshots don't tunnel.
+    frameBudgetMs: 14,       // real ms per frame spent stepping the simulation (at 60 fps)
+    maxFrameBudgetMs: 200,   // when frames are throttled (background tab), step up to this long per frame
+    defaultSeeds: 3,
+    defaultWaveCap: 40,
+    baseSeed: 1000,          // seed index i uses baseSeed + i (same seeds for every combination)
+    waveTimeout: 300,        // s of game time; a wave lasting longer ends the run as 'stalled'
+    storageKey: 'cd_sim_last',
+
+    bot: {
+      thinkEvery: 0.25,      // s between movement decisions
+      skillEvery: 0.1,       // s between skill checks
+      retreatHp: 0.3,        // fall back to the Keep below this HP fraction...
+      resumeHp: 0.65,        // ...and return to the fight above this one
+      warrior: {
+        cleaveMin: 2,          // enemies inside the arc
+        chargeMinDist: 160,    // gap-close when the focus enemy is farther than this...
+        chargeCluster: 3,      // ...or dash through a cluster this big
+        warCryMin: 3,          // enemies inside the radius
+        warCryLowHp: 0.5,      // or below this HP with any enemy near
+        ultMin: 6,             // enemies under Earthshatter (or any boss in range)
+      },
+      mage: {
+        poolMin: 3,
+        freezeKeepDist: 260,   // freeze enemies this close to the Keep...
+        freezeHeroDist: 130,   // ...or this close to the hero
+        ultMin: 6,
+      },
+    },
+
+    // Item build per hero: buy in order until the inventory is full, then level the lowest-level item.
+    itemBuilds: {
+      warrior: ['sword', 'plate', 'gloves', 'fang', 'heart', 'thorns'],
+      mage: ['focus', 'gloves', 'hourglass', 'heart', 'sword', 'storm'],
+    },
+
+    // Spending policies. The bot runs `opening` once, then repeats `loop`, saving up for each step.
+    // Steps: 'item' | 'keep' | 'arrow' | 'cannon' | 'frost' (upgrade an existing one of that type if possible, else build)
+    //        | 'barracks' | 'mine' (build, else upgrade). Locked / impossible steps are skipped.
+    strategies: {
+      carry:    { label: 'Hero carry', hero: 'active', opening: [], loop: ['item'] },
+      turtle:   { label: 'Turtle',     hero: 'active', opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow', 'item'] },
+      economy:  { label: 'Economy',    hero: 'active', opening: ['arrow', 'keep', 'keep', 'mine', 'mine', 'mine'], loop: ['item', 'arrow', 'mine', 'cannon', 'keep', 'item', 'frost'] },
+      keepRush: { label: 'Keep rush',  hero: 'active', opening: ['keep', 'keep', 'keep', 'barracks', 'barracks'], loop: ['barracks', 'item', 'arrow', 'cannon', 'item'] },
+      balanced: { label: 'Balanced',   hero: 'active', opening: ['arrow', 'item', 'keep', 'arrow', 'item'], loop: ['cannon', 'item', 'keep', 'arrow', 'item', 'frost', 'item'] },
+      idle:     { label: 'Idle hero',  hero: 'idle',   opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow'] },
+    },
+
+    // Report flags
+    flags: {
+      heroRatio: 1.3,          // one hero survives this × longer than the other (same difficulty)
+      strategyRatio: 1.5,      // best strategy vs median strategy (same hero + difficulty)
+      idleShare: 0.85,         // idle hero reaches this fraction of the best active strategy → hero matters little
+      towerValueRatio: 2,      // tower damage-per-gold this × above/below the median tower
+      lowSkillShare: 0.04,     // a skill doing less than this share of hero damage
+      keepDamageShare: 0.5,    // one enemy type dealing more than this share of Keep damage
+      earlyLossWave: 5,        // any run lost before this wave
+    },
+  },
 };
 
 // Convenience tile → pixel helpers

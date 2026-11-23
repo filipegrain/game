@@ -121,11 +121,22 @@ class Pathing {
     const sx = dx / steps, sy = dy / steps;
     let bumped = false;
     for (let i = 0; i < steps; i++) {
+      let movedX = false, movedY = false;
       if (sx !== 0) {
-        if (!this.circleBlocked(u.x + sx, u.y, r)) u.x += sx; else bumped = true;
+        if (!this.circleBlocked(u.x + sx, u.y, r)) { u.x += sx; movedX = true; } else bumped = true;
       }
       if (sy !== 0) {
-        if (!this.circleBlocked(u.x, u.y + sy, r)) u.y += sy; else bumped = true;
+        if (!this.circleBlocked(u.x, u.y + sy, r)) { u.y += sy; movedY = true; } else bumped = true;
+      }
+      // Corner slide: a straight move blocked by a tile corner nudges sideways around it
+      // (otherwise big units pushed against a lane/connector corner stay wedged forever).
+      const xMain = Math.abs(sx) >= Math.abs(sy);
+      if (xMain ? !movedX : !movedY) {
+        const a = Math.max(Math.abs(sx), Math.abs(sy));
+        const opts = xMain ? [[sx, a], [sx, -a]] : [[a, sy], [-a, sy]];
+        for (const [mx, my] of opts) {
+          if (!this.circleBlocked(u.x + mx, u.y + my, r)) { u.x += mx; u.y += my; break; }
+        }
       }
     }
     return bumped;

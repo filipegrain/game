@@ -54,8 +54,9 @@ const Sfx = {
     src.connect(f); f.connect(g); g.connect(this.master);
     src.start(t); src.stop(t + dur + 0.02);
   },
+  suppressed: false,     // true while the balance simulation runs
   play(name) {
-    if (Settings.data.mute || !this.ensure()) return;
+    if (this.suppressed || Settings.data.mute || !this.ensure()) return;
     if (this.ctx.state === 'suspended') return;
     const now = performance.now();
     const minGap = { hit: 45, shoot: 60, enemyHit: 70, gold: 60, arrow: 70, death: 50, meteor: 40 }[name] || 0;
@@ -124,6 +125,7 @@ function shapePoints(shape, r) {
 // ------------------------------------------------------------------ FEEL (per GameScene)
 const Feel = {
   scene: null,
+  enabled: true,      // false while the balance simulation runs: no particles, numbers, shake or hitstop
   emitters: {},
   numbers: [],
   init(scene) {
@@ -156,11 +158,13 @@ const Feel = {
   },
 
   burst(x, y, color, count = 10) {
+    if (!this.enabled) return;
     if (!this.scene) return;
     this.emitter(color).explode(count, x, y);
   },
 
   damageNumber(x, y, amount, opts = {}) {
+    if (!this.enabled) return;
     const t = this.numbers.find(n => !n.busy);
     if (!t) return;
     t.busy = true;
@@ -176,22 +180,26 @@ const Feel = {
   },
 
   floatText(x, y, text, color = '#ffffff', size = 16, dur = 900) {
+    if (!this.enabled) return;
     const t = this.scene.add.text(x, y, text, { fontFamily: 'Arial Black, Arial', fontSize: size + 'px', color, stroke: '#000', strokeThickness: 4 })
       .setOrigin(0.5).setDepth(62);
     this.scene.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: dur, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
   },
 
   shake(intensity = 0.005, duration = 120) {
+    if (!this.enabled) return;
     if (!Settings.data.shake || !this.scene) return;
     this.scene.cameras.main.shake(duration, intensity);
   },
 
   hitstop(seconds) {
+    if (!this.enabled) return;
     if (!this.scene) return;
     this.scene.hitstop = Math.max(this.scene.hitstop || 0, seconds);
   },
 
   ring(x, y, radius, color, opts = {}) {
+    if (!this.enabled) return;
     const g = this.scene.add.graphics().setDepth(opts.depth || 35);
     g.setPosition(x, y);
     const dur = opts.duration || 350;
@@ -212,6 +220,7 @@ const Feel = {
   },
 
   arc(x, y, radius, angle, arcRad, color, duration = 220) {
+    if (!this.enabled) return;
     const g = this.scene.add.graphics().setDepth(34).setPosition(x, y);
     const state = { a: 0.75, r: radius * 0.6 };
     const draw = () => {
@@ -227,17 +236,20 @@ const Feel = {
   },
 
   afterimage(x, y, shape, r, color, rotation = 0, alpha = 0.5) {
+    if (!this.enabled) return;
     const g = this.scene.add.graphics().setDepth(18).setPosition(x, y).setRotation(rotation);
     drawShape(g, shape, r, color, { alpha });
     this.scene.tweens.add({ targets: g, alpha: 0, scale: 0.8, duration: 220, onComplete: () => g.destroy() });
   },
 
   flashRect(x, y, w, h, color, dur = 200) {
+    if (!this.enabled) return;
     const r = this.scene.add.rectangle(x, y, w, h, color, 0.7).setDepth(36);
     this.scene.tweens.add({ targets: r, alpha: 0, duration: dur, onComplete: () => r.destroy() });
   },
 
   popScale(obj, scale = 1.25, dur = 90) {
+    if (!this.enabled) return;
     if (!obj || !obj.scene) return;
     obj.scene.tweens.add({ targets: obj, scale, duration: dur, yoyo: true, ease: 'Quad.easeOut', onComplete: () => obj.setScale && obj.setScale(1) });
   },

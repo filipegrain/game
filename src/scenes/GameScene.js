@@ -7,9 +7,11 @@ class GameScene extends Phaser.Scene {
     this.heroKey = data.hero || 'warrior';
     this.diffKey = data.difficulty || 'medium';
     this.diff = CONFIG.difficulty[this.diffKey];
+    this.simJob = data.sim || null;     // balance simulation run (see SimRunner)
   }
 
   create() {
+    if (this.simJob) SimRunner.beginRun(this);   // seeds Math.random before anything rolls dice
     Feel.init(this);
     Combat.init(this);
     this.hitstop = 0;
@@ -29,7 +31,8 @@ class GameScene extends Phaser.Scene {
     this.pointerInside = false;
 
     this.pathing = new Pathing(this);
-    this.drawMap();
+    if (this.simJob && this.textures.exists('map')) this.add.image(0, 0, 'map').setOrigin(0).setDepth(0);
+    else this.drawMap();
 
     this.keep = new Keep(this);
     this.hero = new Hero(this, this.heroKey, this.keep.rx + this.keep.rw + 60, this.keep.y);
@@ -50,6 +53,15 @@ class GameScene extends Phaser.Scene {
     this.camTarget = { x: 0, y: 0 };
     this.jumpToHero();
     cam.setScroll(this.camTarget.x, this.camTarget.y);
+
+    if (this.simJob) {
+      // the bot drives the hero; no HUD, no player input
+      this.ui = { isOverUI: () => false, shopOpen: false, toggleShop() { }, toggleBuildPanel() { } };
+      this.recorder = new SimRecorder(this);
+      this.bot = new SimBot(this, this.simJob.strategy);
+      SimRunner.attach(this);
+      return;
+    }
 
     this.setupInput();
 
@@ -416,6 +428,7 @@ class GameScene extends Phaser.Scene {
   onEnemyKilled(e) {
     this.stats.kills++;
     this.economy.add(e.gold, e.x, e.y - e.radius - 4);
+    if (this.recorder) this.recorder.goldEarned('bounty', e.gold);
     const h = this.hero;
     if (h.alive && Math.hypot(h.x - e.x, h.y - e.y) <= CONFIG.heroCommon.xpRadius) this.leveling.addXp(e.xp);
     else this.leveling.addXp(e.xp * 0.25);
@@ -428,6 +441,7 @@ class GameScene extends Phaser.Scene {
   gameOver() {
     if (this.ended) return;
     this.ended = true;
+    if (this.simJob) { SimRunner.endRun(this, 'keep'); return; }
     const s = this.stats, sc = CONFIG.score;
     const score = Math.round((s.wavesCleared * sc.perWave + s.kills * sc.perKill + this.hero.level * sc.perLevel + s.time * sc.perSecond) * this.diff.scoreMul);
     const key = 'cd_best_' + this.diffKey;
@@ -448,13 +462,44 @@ class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- loop
   update(time, delta) {
+    if (this.simJob) { this.simUpdate(delta); return; }
     const realDt = Math.min(delta / 1000, 0.05);
     this.updateCamera(realDt);
     this.pings = this.pings.filter(p => (p.t -= realDt) > 0);
     if (this.ended) { this.drawOverlays(); return; }
     if (this.paused) { this.drawOverlays(); return; }
     if (this.hitstop > 0) { this.hitstop -= realDt; this.drawOverlays(); return; }
-    const dt = realDt;
+    this.step(realDt);
+    this.drawOverlays();
+  }
+
+  // Balance simulation: as many fixed steps as fit in the frame budget. Hitstop and pause don't apply.
+  simUpdate(delta) {
+    const S = CONFIG.sim, t0 = performance.now(), budget = SimRunner.budget();
+    let steps = 0;
+    try {
+      while (!this.ended && performance.now() - t0 < budget) {
+        this.bot.update(S.step);
+        this.step(S.step);
+        this.recorder.update(S.step);
+        steps++;
+        if (!this.ended) SimRunner.checkRunEnd(this);
+      }
+    } catch (err) {
+      // a game exception ends this run (reported as 'error') instead of freezing the whole simulation
+      console.error('[sim] run crashed', this.simJob, err);
+      this.recorder.error = String(err && err.stack || err).split('\n').slice(0, 3).join(' | ');
+      if (!this.ended) SimRunner.endRun(this, 'error');
+    }
+    SimRunner.onFrame(this, steps * S.step, delta);
+    if (SimRunner.watch && !this.ended) {
+      this.updateCamera(Math.min(delta / 1000, 0.05));
+      this.drawOverlays();
+    }
+  }
+
+  // One simulation tick.
+  step(dt) {
     this.stats.time += dt;
 
     // timers
@@ -491,8 +536,6 @@ class GameScene extends Phaser.Scene {
     if (this.enemies.some(e => !e.alive)) this.enemies = this.enemies.filter(e => e.alive);
     if (this.allies.some(a => !a.alive)) this.allies = this.allies.filter(a => a.alive);
     if (this.projectiles.some(p => !p.alive)) this.projectiles = this.projectiles.filter(p => p.alive);
-
-    this.drawOverlays();
   }
 
   drawOverlays() {

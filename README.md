@@ -56,6 +56,12 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 - **Shop:** 6 item slots, one per item type. Buy an item again to level it up. You can buy anytime, anywhere, and items sell back for 50% of what you spent.
 - **Score:** based on waves, kills, hero level and time. The best score for each difficulty is saved in your browser.
 
+## Balance simulation
+
+**Simulate** on the main menu opens a setup panel. Pick heroes, difficulties, strategies, seeds per combination and a wave cap, then **Run**. A bot plays each combination in the real game at high speed. You can watch it, or cancel and keep a report of the runs that finished.
+
+The report screen shows waves cleared per hero, strategy and difficulty, plus automatic balance flags. **Download .md** gives the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. **Download .json** gives the raw data for diffing two balance passes. **Last report** on the menu reopens the most recent one. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
+
 ## Development
 
 - Plain JavaScript, no modules or build step. Files load in order through `<script>` tags in `index.html`, so add new files there.
@@ -66,7 +72,8 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 src/
   config.js    tunable numbers
   main.js      Phaser boot
-  scenes/      Menu, Game (simulation), UI (HUD), GameOver
+  scenes/      Menu, Game (simulation), UI (HUD), GameOver, SimScenes (balance sim setup/progress/report)
+  sim/         balance simulation: runner, bot, recorder, report
   entities/    Unit base, Hero, Enemy, Ally, Building, Keep, Projectile
   heroes/      Warrior and Mage skill kits
   systems/     waves, pathing (flow field), combat, economy, building, shop, leveling, ally commands, game feel

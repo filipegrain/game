@@ -240,7 +240,8 @@ class SimBot {
   // Lane-tile coverage of a tile within `range` px, per lane. Only lane tiles near the Keep (flow distance) count.
   coverage(tx, ty, range) {
     const p = this.scene.pathing, T = CONFIG.TILE, rt = Math.ceil(range / T), cov = [0, 0, 0];
-    const cx = tx * T + T / 2, cy = ty * T + T / 2;
+    const fp = CONFIG.buildings.footprint;
+    const cx = CONFIG.px(tx + fp / 2), cy = CONFIG.px(ty + fp / 2);
     for (let y = ty - rt; y <= ty + rt; y++) {
       for (let x = tx - rt; x <= tx + rt; x++) {
         if (!p.isLane(x, y)) continue;

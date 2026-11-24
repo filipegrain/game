@@ -6,9 +6,10 @@ class Building {
     this.type = type;
     this.def = CONFIG.buildings[type];
     this.tx = tx; this.ty = ty;
-    const T = CONFIG.TILE;
-    this.x = tx * T + T / 2; this.y = ty * T + T / 2;
-    this.radius = T / 2;
+    const fp = CONFIG.buildings.footprint;
+    this.fp = fp;
+    this.x = CONFIG.px(tx + fp / 2); this.y = CONFIG.px(ty + fp / 2);
+    this.radius = CONFIG.px(fp / 2);
     this.level = 1;
     this.invested = this.def.cost;
     this.alive = true;
@@ -26,32 +27,32 @@ class Building {
   get rate() { return (this.def.rate || 0) * CONFIG.buildings.levelMul.rate[this.level - 1]; }
 
   redraw() {
-    const g = this.gfx, d = this.def, h = CONFIG.TILE / 2;
+    const g = this.gfx, d = this.def, h = CONFIG.px(this.fp / 2);
     g.clear();
     const base = d.color;
     if (this.type === 'barracks') {
-      g.fillStyle(base, 1); g.fillRect(-h + 1, -h + 5, h * 2 - 2, h * 2 - 10);
-      g.lineStyle(2, 0x173a70, 1); g.strokeRect(-h + 1, -h + 5, h * 2 - 2, h * 2 - 10);
-      g.fillStyle(0xffffff, 0.8); g.fillRect(-3, -3, 6, 9);
+      g.fillStyle(base, 1); g.fillRect(-h + 2, -h + 6, h * 2 - 4, h * 2 - 12);
+      g.lineStyle(3, 0x173a70, 1); g.strokeRect(-h + 2, -h + 6, h * 2 - 4, h * 2 - 12);
+      g.fillStyle(0xffffff, 0.8); g.fillRect(-5, -6, 10, 18);
     } else if (this.type === 'mine') {
-      g.fillStyle(base, 1); g.fillRect(-h + 3, -h + 3, h * 2 - 6, h * 2 - 6);
-      g.lineStyle(2, 0x8a6d00, 1); g.strokeRect(-h + 3, -h + 3, h * 2 - 6, h * 2 - 6);
-      g.fillStyle(0xfff3a0, 1); g.fillCircle(-4, 2, 4); g.fillCircle(4, -3, 3);
+      g.fillStyle(base, 1); g.fillRect(-h + 4, -h + 4, h * 2 - 8, h * 2 - 8);
+      g.lineStyle(3, 0x8a6d00, 1); g.strokeRect(-h + 4, -h + 4, h * 2 - 8, h * 2 - 8);
+      g.fillStyle(0xfff3a0, 1); g.fillCircle(-8, 4, 8); g.fillCircle(8, -6, 6);
     } else {
-      g.fillStyle(base, 1); g.fillRect(-h + 2, -h + 2, h * 2 - 4, h * 2 - 4);
-      g.lineStyle(2, 0x2a2f38, 1); g.strokeRect(-h + 2, -h + 2, h * 2 - 4, h * 2 - 4);
-      g.fillStyle(d.core, 1); g.fillCircle(0, 0, 6 + this.level);
+      g.fillStyle(base, 1); g.fillRect(-h + 3, -h + 3, h * 2 - 6, h * 2 - 6);
+      g.lineStyle(3, 0x2a2f38, 1); g.strokeRect(-h + 3, -h + 3, h * 2 - 6, h * 2 - 6);
+      g.fillStyle(d.core, 1); g.fillCircle(0, 0, 10 + this.level * 2);
     }
     // level pips
     g.fillStyle(0xffd23f, 1);
-    for (let i = 0; i < this.level; i++) g.fillRect(-h + 4 + i * 6, h - 7, 4, 4);
+    for (let i = 0; i < this.level; i++) g.fillRect(-h + 7 + i * 9, h - 12, 6, 6);
   }
 
   edgeDist(x, y) {
-    const T = CONFIG.TILE;
-    const x0 = this.tx * T, y0 = this.ty * T;
-    const cx = Math.max(x0, Math.min(x, x0 + T));
-    const cy = Math.max(y0, Math.min(y, y0 + T));
+    const s = CONFIG.px(this.fp);
+    const x0 = CONFIG.px(this.tx), y0 = CONFIG.px(this.ty);
+    const cx = Math.max(x0, Math.min(x, x0 + s));
+    const cy = Math.max(y0, Math.min(y, y0 + s));
     return Math.hypot(x - cx, y - cy);
   }
 

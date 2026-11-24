@@ -80,6 +80,19 @@ class Pathing {
   tileType(x, y) { return this.inBounds(x, y) ? this.tiles[this.idx(x, y)] : TILE_T.TERRAIN; }
   isLane(x, y) { const t = this.tileType(x, y); return t === TILE_T.PATH || t === TILE_T.CONNECTOR; }
   buildingAt(x, y) { return this.inBounds(x, y) ? this.building[this.idx(x, y)] : null; }
+  forEachFootprint(tx, ty, fp, fn) {
+    for (let y = ty; y < ty + fp; y++) for (let x = tx; x < tx + fp; x++) fn(x, y);
+  }
+  occupyBuilding(b) {
+    this.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => {
+      if (this.inBounds(x, y)) this.building[this.idx(x, y)] = b;
+    });
+  }
+  freeBuilding(b) {
+    this.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => {
+      if (this.inBounds(x, y) && this.building[this.idx(x, y)] === b) this.building[this.idx(x, y)] = null;
+    });
+  }
   isWalkable(x, y) { return this.isLane(x, y) && !this.building[this.idx(x, y)]; }
   blockedTile(x, y) { return !this.isWalkable(x, y); }
 

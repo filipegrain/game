@@ -157,9 +157,9 @@ const CONFIG = {
   keep: {
     tiers: [
       { cost: 0,   hp: 1600, spawnEvery: 8,   maxAllies: 4,  attack: null,                                    archers: false, buildRadius: 40, repair: 0 },
-      { cost: 300, hp: 2400, spawnEvery: 7.5, maxAllies: 6,  attack: { damage: 22, range: 360, rate: 1.0, shots: 1 }, archers: false, buildRadius: 52, repair: 0 },
-      { cost: 550, hp: 3400, spawnEvery: 7,   maxAllies: 8,  attack: { damage: 30, range: 380, rate: 1.2, shots: 1 }, archers: true,  buildRadius: 68, repair: 0 },
-      { cost: 900, hp: 4800, spawnEvery: 6,   maxAllies: 10, attack: { damage: 48, range: 420, rate: 1.5, shots: 2 }, archers: true,  buildRadius: 99, repair: 10 },
+      { cost: 300, hp: 2400, spawnEvery: 7.5, maxAllies: 6,  attack: { damage: 66, range: 1080, rate: 1.0, shots: 1 }, archers: false, buildRadius: 52, repair: 0 },
+      { cost: 550, hp: 3400, spawnEvery: 7,   maxAllies: 8,  attack: { damage: 90, range: 1140, rate: 1.2, shots: 1 }, archers: true,  buildRadius: 68, repair: 0 },
+      { cost: 900, hp: 4800, spawnEvery: 6,   maxAllies: 10, attack: { damage: 144, range: 1260, rate: 1.5, shots: 2 }, archers: true,  buildRadius: 99, repair: 10 },
     ],
     archerEvery: 3,     // every Nth spawn is an archer (tier 3+)
     allyTierScaling: 0.18,
@@ -173,6 +173,7 @@ const CONFIG = {
 
   // ---------------------------------------------------------------- BUILDINGS
   buildings: {
+    footprint: 2,   // each building occupies footprint x footprint tiles (top-left = placement tile)
     arrow:  { name: 'Arrow Tower', key: '1', cost: 100, color: 0x5a6270, core: 0xffffff, tier: 1,
               range: 230, damage: 18, rate: 1.6, projSpeed: 750, desc: 'Fast single-target arrows.' },
     cannon: { name: 'Cannon',      key: '2', cost: 175, color: 0x5a6270, core: 0xff9a3c, tier: 2,

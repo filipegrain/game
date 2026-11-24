@@ -410,13 +410,12 @@ class GameScene extends Phaser.Scene {
 
   addBuilding(b) {
     this.buildings.push(b);
-    this.pathing.building[this.pathing.idx(b.tx, b.ty)] = b;
+    this.pathing.occupyBuilding(b);
     this.events.emit('buildingsChanged');
   }
 
   removeBuilding(b) {
-    const i = this.pathing.idx(b.tx, b.ty);
-    if (this.pathing.building[i] === b) this.pathing.building[i] = null;
+    this.pathing.freeBuilding(b);
     b.destroy();
     this.buildings = this.buildings.filter(x => x !== b);
     if (this.build.selected === b) this.build.select(null);
@@ -601,8 +600,8 @@ class GameScene extends Phaser.Scene {
         ig.lineStyle(2, 0xffd23f, 0.9); ig.strokeRect(k.rx - 8, k.ry - 8, k.rw + 16, k.rh + 16);
         if (k.tierDef.attack) { ig.lineStyle(1.5, 0xffd23f, 0.3); ig.strokeCircle(k.x, k.y, k.tierDef.attack.range); }
       } else {
-        const T = CONFIG.TILE;
-        ig.lineStyle(2, 0xffd23f, 0.9); ig.strokeRect(sel.tx * T - 2, sel.ty * T - 2, T + 4, T + 4);
+        const s = CONFIG.px(sel.fp);
+        ig.lineStyle(2, 0xffd23f, 0.9); ig.strokeRect(CONFIG.px(sel.tx) - 2, CONFIG.px(sel.ty) - 2, s + 4, s + 4);
         if (sel.range) { ig.lineStyle(1.5, 0xffd23f, 0.4); ig.strokeCircle(sel.x, sel.y, sel.range); }
       }
     }

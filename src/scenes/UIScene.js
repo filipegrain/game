@@ -15,6 +15,8 @@ const STAT_FMT = {
   rageTime: v => '+' + v + 's Rage', rageCd: v => '-' + v + 's Rage cooldown',
 };
 const ITEM_GRID = 16;   // owned-item icons shown (2 rows of 8)
+const HERO_PANEL = { x: 230, y: 640, w: 820, h: 76 };   // bottom bar
+const PANEL_BOTTOM = HERO_PANEL.y + HERO_PANEL.h;       // every bottom panel ends on this line (716)
 
 class UIScene extends Phaser.Scene {
   constructor() { super('UIScene'); }
@@ -122,24 +124,24 @@ class UIScene extends Phaser.Scene {
   // ------------------------------------------------------------------ top bar
   createTopBar() {
     const g = this.add.graphics().setDepth(UI_DEPTH.panel);
-    g.fillStyle(0x0f131a, 0.9); g.fillRect(0, 0, 1280, 40);
-    g.lineStyle(2, 0x3a4252, 1); g.lineBetween(0, 40, 1280, 40);
-    g.fillStyle(0xffd23f, 1); g.fillCircle(22, 20, 8); g.lineStyle(2, 0xb8920a, 1); g.strokeCircle(22, 20, 8);
-    this.region(0, 0, 1280, 42);
-    this.goldText = this.text(36, 20, '0', 18, '#ffd23f', { fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.waveText = this.text(130, 20, 'Wave 0', 16, '#ffffff', { fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.phaseText = this.text(230, 20, '', 14, '#cbd5e1').setOrigin(0, 0.5);
-    this.nextText = this.text(450, 20, '', 14, '#ff8a8a').setOrigin(0, 0.5);
-    this.startBtn = this.button(640, 6, 180, 28, 'Start Next Wave (N)', () => this.gs.waves.startWave(), {
-      color: 0x7a2a2a, hover: 0x9a3a3a, stroke: 0xff6060,
+    g.fillStyle(0x0f131a, 0.9); g.fillRect(0, 0, 1280, 32);
+    g.lineStyle(2, 0x3a4252, 1); g.lineBetween(0, 32, 1280, 32);
+    g.fillStyle(0xffd23f, 1); g.fillCircle(22, 16, 7); g.lineStyle(2, 0xb8920a, 1); g.strokeCircle(22, 16, 7);
+    this.region(0, 0, 1280, 34);
+    this.goldText = this.text(36, 16, '0', 16, '#ffd23f', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.waveText = this.text(130, 16, 'Wave 0', 14, '#ffffff', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.phaseText = this.text(230, 16, '', 12, '#cbd5e1').setOrigin(0, 0.5);
+    this.nextText = this.text(450, 16, '', 12, '#ff8a8a').setOrigin(0, 0.5);
+    this.startBtn = this.button(640, 4, 180, 24, 'Start Next Wave (N)', () => this.gs.waves.startWave(), {
+      color: 0x7a2a2a, hover: 0x9a3a3a, stroke: 0xff6060, size: 12,
       tip: () => 'Start the next wave now.\nBonus: ' + CONFIG.waves.earlyGoldPerSec + ' gold per second remaining.',
     });
-    this.text(845, 20, 'KEEP', 13, '#9ca3af', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.text(845, 16, 'KEEP', 11, '#9ca3af', { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.keepBarG = this.add.graphics().setDepth(UI_DEPTH.content);
-    this.keepHpText = this.text(990, 20, '', 12, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5);
-    this.muteBtn = this.button(1132, 6, 44, 28, '', () => { Settings.toggle('mute'); this.refreshToggles(); }, { size: 11, tip: () => 'Sound on/off (M)' });
-    this.shakeBtn = this.button(1180, 6, 50, 28, '', () => { Settings.toggle('shake'); this.refreshToggles(); }, { size: 11, tip: () => 'Screen shake on/off' });
-    this.pauseBtn = this.button(1234, 6, 40, 28, 'II', () => this.gs.togglePause(), { size: 13, tip: () => 'Pause (P / Esc)' });
+    this.keepHpText = this.text(990, 16, '', 10, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5);
+    this.muteBtn = this.button(1132, 4, 44, 24, '', () => { Settings.toggle('mute'); this.refreshToggles(); }, { size: 10, tip: () => 'Sound on/off (M)' });
+    this.shakeBtn = this.button(1180, 4, 50, 24, '', () => { Settings.toggle('shake'); this.refreshToggles(); }, { size: 10, tip: () => 'Screen shake on/off' });
+    this.pauseBtn = this.button(1234, 4, 40, 24, 'II', () => this.gs.togglePause(), { size: 12, tip: () => 'Pause (P / Esc)' });
     this.refreshToggles();
   }
 
@@ -150,51 +152,51 @@ class UIScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ bottom panel
   createBottomPanel() {
-    const X = 230, Y = 606, W = 820, H = 110;
+    const { x: X, y: Y, w: W, h: H } = HERO_PANEL;
     this.panelBg(X, Y, W, H);
     this.region(X, Y, W, H);
     // portrait
     const pg = this.add.graphics().setDepth(UI_DEPTH.content);
-    pg.fillStyle(0x1a2030, 1); pg.fillRoundedRect(X + 10, Y + 10, 84, 84, 6);
-    pg.lineStyle(2, 0x4b5563, 1); pg.strokeRoundedRect(X + 10, Y + 10, 84, 84, 6);
+    pg.fillStyle(0x1a2030, 1); pg.fillRoundedRect(X + 8, Y + 8, 60, 60, 6);
+    pg.lineStyle(2, 0x4b5563, 1); pg.strokeRoundedRect(X + 8, Y + 8, 60, 60, 6);
     const hd = CONFIG.heroes[this.hero.heroKey];
-    pg.fillStyle(hd.color, 1); pg.fillCircle(X + 52, Y + 46, 24);
-    pg.lineStyle(3, 0xffffff, 1); pg.strokeCircle(X + 52, Y + 46, 24);
-    pg.fillStyle(0xffffff, 1); pg.fillTriangle(X + 84, Y + 46, X + 72, Y + 38, X + 72, Y + 54);
-    this.portraitLevel = this.text(X + 52, Y + 84, 'Lv 1', 14, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5);
+    pg.fillStyle(hd.color, 1); pg.fillCircle(X + 38, Y + 36, 17);
+    pg.lineStyle(2.5, 0xffffff, 1); pg.strokeCircle(X + 38, Y + 36, 17);
+    pg.fillStyle(0xffffff, 1); pg.fillTriangle(X + 58, Y + 36, X + 50, Y + 30, X + 50, Y + 42);
+    this.portraitLevel = this.text(X + 38, Y + 62, 'Lv 1', 11, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5);
     // bars
     this.barsG = this.add.graphics().setDepth(UI_DEPTH.content);
-    this.hpText = this.text(X + 236, Y + 20, '', 12, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5).setDepth(UI_DEPTH.content + 2);
-    this.xpText = this.text(X + 106, Y + 62, '', 10, '#d8b4fe').setOrigin(0, 0);
-    this.statText = this.text(X + 106, Y + 80, '', 11, '#9ca3af');
+    this.hpText = this.text(X + 235, Y + 16, '', 11, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5).setDepth(UI_DEPTH.content + 2);
+    this.xpText = this.text(X + 235, Y + 31, '', 8, '#d8b4fe').setOrigin(0.5);
+    this.statText = this.text(X + 78, Y + 43, '', 9, '#9ca3af');
     // skills
     this.skillG = this.add.graphics().setDepth(UI_DEPTH.content);
     this.skillPulse = { Q: 0, W: 0, E: 0, R: 0 };
     this.skillDenied = { Q: 0, W: 0, E: 0, R: 0 };
     this.skillUI = {};
     SKILL_KEYS.forEach((k, i) => {
-      const sx = X + 386 + i * 66, sy = Y + 22;
+      const sx = X + 386 + i * 66, sy = Y + 6;
       const def = CONFIG.skills[this.hero.heroKey][k];
-      const zone = this.add.zone(sx, sy, 58, 58).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(UI_DEPTH.content);
+      const zone = this.add.zone(sx, sy, 44, 44).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(UI_DEPTH.content);
       zone.on('pointerdown', (p) => { if (p.leftButtonDown() && def.cast === 'auto') { this.hero.kit.toggleAuto(k); this.showTip(this.skillTip(k)); } });
       zone.on('pointerover', () => this.showTip(this.skillTip(k)));
       zone.on('pointerout', () => this.hideTip());
-      const keyT = this.text(sx + 4, sy + 2, k, 13, '#ffffff', { fontStyle: 'bold' }).setDepth(UI_DEPTH.content + 3);
-      const nameT = this.text(sx + 29, sy + 30, def.name.split(' ')[0], 10, '#e5e7eb').setOrigin(0.5).setDepth(UI_DEPTH.content + 3);
-      const cdT = this.text(sx + 29, sy + 29, '', 18, '#ffffff', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(UI_DEPTH.content + 4);
-      const autoT = this.text(sx + 29, sy + 66, '', 10, '#7cf29a', { fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
+      const keyT = this.text(sx + 3, sy + 1, k, 11, '#ffffff', { fontStyle: 'bold' }).setDepth(UI_DEPTH.content + 3);
+      const nameT = this.text(sx + 22, sy + 30, def.name.split(' ')[0], 8, '#e5e7eb').setOrigin(0.5).setDepth(UI_DEPTH.content + 3);
+      const cdT = this.text(sx + 22, sy + 21, '', 16, '#ffffff', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(UI_DEPTH.content + 4);
+      const autoT = this.text(sx + 22, sy + 44, '', 8, '#7cf29a', { fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
       this.skillUI[k] = { sx, sy, keyT, nameT, cdT, autoT };
     });
     // owned items: 2 rows of 8
     this.itemG = this.add.graphics().setDepth(UI_DEPTH.content);
     this.itemSlots = [];
     for (let i = 0; i < ITEM_GRID; i++) {
-      const ix = X + 664 + (i % 8) * 19, iy = Y + 14 + Math.floor(i / 8) * 42;
-      this.ownedItemZone(ix, iy, 18, 32, i).setDepth(UI_DEPTH.content);
-      const lvT = this.text(ix + 9, iy + 19, '', 10, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
+      const ix = X + 664 + (i % 8) * 19, iy = Y + 6 + Math.floor(i / 8) * 30;
+      this.ownedItemZone(ix, iy, 18, 26, i).setDepth(UI_DEPTH.content);
+      const lvT = this.text(ix + 9, iy + 16, '', 9, '#ffd23f', { fontStyle: 'bold', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5, 0).setDepth(UI_DEPTH.content + 3);
       this.itemSlots.push({ x: ix, y: iy, lvT });
     }
-    this.text(X + 664, Y + 102, 'ITEMS', 9, '#6b7280').setOrigin(0, 1);
+    this.text(X + 664, Y + 74, 'ITEMS', 8, '#6b7280').setOrigin(0, 1);
   }
 
   ownedItems() { return CONFIG.itemOrder.filter(k => this.hero.itemLevels[k]); }
@@ -230,7 +232,7 @@ class UIScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ minimap
   createMinimap() {
-    const X = 8, Y = 598, W = 208, H = 117;
+    const X = 8, W = 176, H = 82, Y = PANEL_BOTTOM - H - 4;
     this.mm = { X, Y, W, H, s: W / CONFIG.WORLD_W };
     this.region(X - 4, Y - 4, W + 8, H + 8);
     const bg = this.add.graphics().setDepth(UI_DEPTH.panel);
@@ -267,7 +269,8 @@ class UIScene extends Phaser.Scene {
     g.clear();
     for (const b of gs.buildings) {
       g.fillStyle(b.type === 'mine' ? 0xffd23f : b.type === 'barracks' ? 0x4a8fe0 : 0xffffff, 1);
-      g.fillRect(X + b.tx * CONFIG.TILE * s - 0.5, Y + b.ty * CONFIG.TILE * s - 0.5, 3, 3);
+      const bs = Math.max(2, CONFIG.px(b.fp) * s);
+      g.fillRect(X + b.tx * CONFIG.TILE * s - 0.5, Y + b.ty * CONFIG.TILE * s - 0.5, bs, bs);
     }
     g.fillStyle(0x60a5fa, 1);
     for (const a of gs.allies) g.fillRect(X + a.x * s - 1, Y + a.y * s - 1, 2.5, 2.5);
@@ -369,14 +372,14 @@ class UIScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ selection panel
   createSelectionPanel() {
-    const X = 1056, Y = 600, W = 218, H = 116;
+    const X = 1056, W = 218, H = 74, Y = PANEL_BOTTOM - H;
     this.selVisible = false;
     this.region(X, Y, W, H, () => this.selVisible);
     this.selBg = this.panelBg(X, Y, W, H).setVisible(false);
-    this.selTitle = this.text(X + 10, Y + 8, '', 14, '#ffd23f', { fontStyle: 'bold' }).setVisible(false);
-    this.selInfo = this.text(X + 10, Y + 28, '', 11, '#cbd5e1', { lineSpacing: 2 }).setVisible(false);
-    this.selUp = this.button(X + 8, Y + 80, 98, 28, 'Upgrade', () => this.gs.build.upgradeSelected(), { size: 11, color: 0x24563a, hover: 0x2f7049, tip: () => this.selUpTip() });
-    this.selSell = this.button(X + 112, Y + 80, 98, 28, 'Sell', () => this.gs.build.sellSelected(), { size: 11, color: 0x5a2a2a, hover: 0x7a3a3a, tip: () => 'Sell for 50% of total invested' });
+    this.selTitle = this.text(X + 10, Y + 5, '', 13, '#ffd23f', { fontStyle: 'bold' }).setVisible(false);
+    this.selInfo = this.text(X + 10, Y + 21, '', 9, '#cbd5e1', { lineSpacing: 1 }).setVisible(false);
+    this.selUp = this.button(X + 8, Y + 47, 98, 22, 'Upgrade', () => this.gs.build.upgradeSelected(), { size: 10, color: 0x24563a, hover: 0x2f7049, tip: () => this.selUpTip() });
+    this.selSell = this.button(X + 112, Y + 47, 98, 22, 'Sell', () => this.gs.build.sellSelected(), { size: 10, color: 0x5a2a2a, hover: 0x7a3a3a, tip: () => 'Sell for 50% of total invested' });
     this.refreshSelection();
   }
 
@@ -405,8 +408,8 @@ class UIScene extends Phaser.Scene {
     if (s === this.gs.keep) {
       const n = s.nextTierDef;
       this.setText(this.selTitle, 'selT', 'Keep — Tier ' + s.tier);
-      this.setText(this.selInfo, 'selI', 'HP ' + Math.ceil(s.hp) + ' / ' + s.maxHp + '\nAllies ' + this.gs.allies.length + ' / ' + s.maxAllies() + '   Build radius ' + s.buildRadius +
-        (s.tierDef.attack ? '\nArrows: ' + s.tierDef.attack.damage + ' dmg' : ''));
+      this.setText(this.selInfo, 'selI', 'HP ' + Math.ceil(s.hp) + ' / ' + s.maxHp + '   Allies ' + this.gs.allies.length + ' / ' + s.maxAllies() +
+        '\nRadius ' + s.buildRadius + (s.tierDef.attack ? '   Arrows ' + s.tierDef.attack.damage : ''));
       this.setText(this.selUp.txt, 'selU', n ? 'Upgrade ' + n.cost + 'g' : 'Max tier');
       this.selUp.bg.setFillStyle(n && this.gs.economy.canAfford(n.cost) ? 0x24563a : 0x2a3140);
       return;
@@ -511,7 +514,7 @@ class UIScene extends Phaser.Scene {
     this.noticeText = this.text(640, 64, '', 16, '#ffffff', { fontStyle: 'bold', stroke: '#000', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(UI_DEPTH.window + 5).setAlpha(0);
     this.bannerText = this.text(640, 170, '', 44, '#ffffff', { fontStyle: 'bold', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5).setDepth(UI_DEPTH.window + 5).setAlpha(0);
     this.bannerSub = this.text(640, 214, '', 18, '#e5e7eb', { stroke: '#000', strokeThickness: 4 }).setOrigin(0.5).setDepth(UI_DEPTH.window + 5).setAlpha(0);
-    this.hintText = this.text(640, 584, '', 14, '#ffffff', { stroke: '#000', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(UI_DEPTH.window);
+    this.hintText = this.text(640, 620, '', 14, '#ffffff', { stroke: '#000', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(UI_DEPTH.window);
     this.deathText = this.text(640, 300, '', 30, '#ff6b6b', { fontStyle: 'bold', stroke: '#000', strokeThickness: 6, align: 'center' }).setOrigin(0.5).setDepth(UI_DEPTH.window);
     this.edgeG = this.add.graphics().setDepth(UI_DEPTH.panel - 1);
     this.edgeLabels = [0, 1, 2].map(() => this.text(0, 0, '', 12, '#ff8a8a', { fontStyle: 'bold', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(UI_DEPTH.panel - 1));
@@ -606,10 +609,10 @@ class UIScene extends Phaser.Scene {
     const k = gs.keep;
     const kb = this.keepBarG;
     kb.clear();
-    kb.fillStyle(0x000000, 0.6); kb.fillRect(890, 12, 200, 16);
+    kb.fillStyle(0x000000, 0.6); kb.fillRect(890, 8, 200, 15);
     const kf = Math.max(0, k.hp / k.maxHp);
-    kb.fillStyle(kf > 0.5 ? 0x22c55e : kf > 0.25 ? 0xeab308 : 0xef4444, 1); kb.fillRect(890, 12, 200 * kf, 16);
-    kb.lineStyle(1, 0x6b7280, 1); kb.strokeRect(890, 12, 200, 16);
+    kb.fillStyle(kf > 0.5 ? 0x22c55e : kf > 0.25 ? 0xeab308 : 0xef4444, 1); kb.fillRect(890, 8, 200 * kf, 15);
+    kb.lineStyle(1, 0x6b7280, 1); kb.strokeRect(890, 8, 200, 15);
     this.setText(this.keepHpText, 'khp', Math.ceil(k.hp) + ' / ' + k.maxHp + '  T' + k.tier);
     const n = k.nextTierDef;
     this.setText(this.colBtns.keep.txt, 'keepbtn', n ? 'KEEP T' + k.tier + '\n(U) ' + n.cost + 'g' : 'KEEP T' + k.tier + '\nMAX');
@@ -658,15 +661,15 @@ class UIScene extends Phaser.Scene {
   }
 
   drawHeroPanel(dt) {
-    const h = this.hero, X = 230, Y = 606;
+    const h = this.hero, X = HERO_PANEL.x, Y = HERO_PANEL.y;
     const g = this.barsG;
     g.clear();
-    const bx = X + 106, bw = 260;
-    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 12, bw, 17);
-    g.fillStyle(0x22c55e, 1); g.fillRect(bx, Y + 12, bw * Math.max(0, h.hp / h.maxHp), 17);
+    const bx = X + 100, bw = 270;
+    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 8, bw, 15);
+    g.fillStyle(0x22c55e, 1); g.fillRect(bx, Y + 8, bw * Math.max(0, h.hp / h.maxHp), 15);
     const xpNeed = this.gs.leveling.xpToNext();
-    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 36, bw, 10);
-    g.fillStyle(0xa855f7, 1); g.fillRect(bx, Y + 36, bw * Math.min(1, h.xp / xpNeed), 10);
+    g.fillStyle(0x000000, 0.6); g.fillRect(bx, Y + 26, bw, 9);
+    g.fillStyle(0xa855f7, 1); g.fillRect(bx, Y + 26, bw * Math.min(1, h.xp / xpNeed), 9);
     this.setText(this.hpText, 'hp', Math.ceil(h.hp) + ' / ' + h.maxHp);
     this.setText(this.xpText, 'xp', 'XP ' + h.xp + ' / ' + xpNeed);
     this.setText(this.statText, 'stats', 'DMG ' + Math.round(h.stats.damage) + '   ARM ' + Math.round(h.getArmor()) + '   SPD ' + Math.round(h.moveSpeed) + '   AS ' + (h.def.attackRate * h.stats.attackSpeed).toFixed(2) + (h.stats.cdr ? '   CDR ' + Math.round(h.stats.cdr * 100) + '%' : ''));
@@ -682,7 +685,7 @@ class UIScene extends Phaser.Scene {
       const autoOff = def.cast === 'auto' && !h.kit.autoQ;
       this.skillPulse[k] = Math.max(0, this.skillPulse[k] - dt);
       this.skillDenied[k] = Math.max(0, this.skillDenied[k] - dt);
-      const x = u.sx, y = u.sy, S = 58;
+      const x = u.sx, y = u.sy, S = 44;
       let base = learned ? 0x2a3a5c : 0x161a22;
       sg.fillStyle(base, 1); sg.fillRoundedRect(x, y, S, S, 6);
       // icon
@@ -713,7 +716,7 @@ class UIScene extends Phaser.Scene {
     ig.clear();
     this.itemSlots.forEach((sl, i) => {
       const key = owned[i];
-      if (key) this.drawItemIcon(ig, sl.x + 9, sl.y + 9, CONFIG.items[key], 7);
+      if (key) this.drawItemIcon(ig, sl.x + 9, sl.y + 8, CONFIG.items[key], 7);
       else { ig.fillStyle(0x161a22, 1); ig.fillRect(sl.x + 1, sl.y + 1, 16, 16); }
       this.setText(sl.lvT, 'ilv' + i, key ? String(this.gs.picks.level(key)) : '');
     });
@@ -765,7 +768,7 @@ class UIScene extends Phaser.Scene {
       const sx = sp.x - cam.scrollX, sy = sp.y - cam.scrollY;
       const label = this.edgeLabels[i];
       const name = CONFIG.map.lanes[l].name;
-      const minX = 30, maxX = 1250, minY = 70, maxY = 580;
+      const minX = 30, maxX = 1250, minY = 70, maxY = 624;
       if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
         g.lineStyle(3, 0xff3030, blink); g.strokeCircle(sx, sy, 48);
         label.setPosition(sx, sy - 60).setText((gs.waves.phase === 'build' ? 'NEXT: ' : '') + name).setVisible(true);

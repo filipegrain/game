@@ -12,28 +12,36 @@ class BuildSystem {
   isUnlocked(type) { return this.keep.tier >= CONFIG.buildings[type].tier; }
 
   inBuildRadius(tx, ty) {
-    const k = CONFIG.map.keep;
+    const k = CONFIG.map.keep, fp = CONFIG.buildings.footprint;
     const kx = k.x + k.w / 2, ky = k.y + k.h / 2;
-    return Math.hypot(tx + 0.5 - kx, ty + 0.5 - ky) <= this.keep.buildRadius;
+    return Math.hypot(tx + fp / 2 - kx, ty + fp / 2 - ky) <= this.keep.buildRadius;
   }
 
   check(type, tx, ty) {
-    const p = this.scene.pathing, m = CONFIG.map, def = CONFIG.buildings[type];
-    if (!p.inBounds(tx, ty)) return { ok: false, reason: 'Out of bounds' };
+    const p = this.scene.pathing, m = CONFIG.map, def = CONFIG.buildings[type], k = m.keep;
+    const fp = CONFIG.buildings.footprint;
+    let oob = false, occupied = false, blocked = false, nearKeep = false;
+    p.forEachFootprint(tx, ty, fp, (x, y) => {
+      if (!p.inBounds(x, y)) { oob = true; return; }
+      if (p.buildingAt(x, y) || p.tileType(x, y) === TILE_T.KEEP) occupied = true;
+      if (p.tileType(x, y) !== TILE_T.TERRAIN) blocked = true;
+      // stay off the Keep's walls
+      if (x >= k.x - 1 && x <= k.x + k.w && y >= k.y - 1 && y <= k.y + k.h) nearKeep = true;
+    });
+    if (oob) return { ok: false, reason: 'Out of bounds' };
     if (!this.isUnlocked(type)) return { ok: false, reason: 'Requires Keep tier ' + def.tier };
-    if (p.buildingAt(tx, ty)) return { ok: false, reason: 'Occupied' };
-    const t = p.tileType(tx, ty);
-    if (t === TILE_T.KEEP) return { ok: false, reason: 'Occupied' };
+    if (occupied) return { ok: false, reason: 'Occupied' };
     if (!this.inBuildRadius(tx, ty)) return { ok: false, reason: 'Outside build area (upgrade the Keep)' };
-    if (t !== TILE_T.TERRAIN) return { ok: false, reason: 'Buildings go next to lanes, not on them' };
+    if (blocked) return { ok: false, reason: 'Buildings go next to lanes, not on them' };
     const a = m.towerAdjacency;
     let near = false;
-    for (let y = ty - a; y <= ty + a && !near; y++)
-      for (let x = tx - a; x <= tx + a; x++) if (p.isLane(x, y)) { near = true; break; }
+    p.forEachFootprint(tx, ty, fp, (x, y) => {
+      if (near) return;
+      for (let yy = y - a; yy <= y + a && !near; yy++)
+        for (let xx = x - a; xx <= x + a; xx++) if (p.isLane(xx, yy)) { near = true; break; }
+    });
     if (!near) return { ok: false, reason: 'Must be next to a lane' };
-    // stay off the Keep's walls
-    const k = m.keep;
-    if (tx >= k.x - 1 && tx <= k.x + k.w && ty >= k.y - 1 && ty <= k.y + k.h) return { ok: false, reason: 'Too close to the Keep' };
+    if (nearKeep) return { ok: false, reason: 'Too close to the Keep' };
     if (!this.scene.economy.canAfford(def.cost)) return { ok: false, reason: 'Not enough gold', gold: true };
     return { ok: true };
   }
@@ -104,19 +112,27 @@ class BuildSystem {
 
   drawGhost(g, wx, wy) {
     if (!this.placing) return;
-    const p = this.scene.pathing, T = CONFIG.TILE, def = CONFIG.buildings[this.placing];
+    const p = this.scene.pathing, def = CONFIG.buildings[this.placing];
+    const fp = CONFIG.buildings.footprint, s = CONFIG.px(fp);
     const k = CONFIG.map.keep;
     // build area
     g.lineStyle(2, 0xffd23f, 0.25);
-    g.strokeCircle((k.x + k.w / 2) * T, (k.y + k.h / 2) * T, this.keep.buildRadius * T);
+    g.strokeCircle(CONFIG.px(k.x + k.w / 2), CONFIG.px(k.y + k.h / 2), CONFIG.px(this.keep.buildRadius));
     const tx = p.tileOf(wx), ty = p.tileOf(wy);
     const c = this.check(this.placing, tx, ty);
     const col = c.ok ? 0x44ff66 : 0xff4444;
-    g.fillStyle(col, 0.35); g.fillRect(tx * T, ty * T, T, T);
-    g.lineStyle(2, col, 0.9); g.strokeRect(tx * T, ty * T, T, T);
+    const x0 = CONFIG.px(tx), y0 = CONFIG.px(ty);
+    g.fillStyle(col, 0.35); g.fillRect(x0, y0, s, s);
+    g.lineStyle(2, col, 0.9); g.strokeRect(x0, y0, s, s);
+    g.lineStyle(1, col, 0.35);
+    for (let i = 1; i < fp; i++) {
+      const d = CONFIG.px(i);
+      g.lineBetween(x0 + d, y0, x0 + d, y0 + s);
+      g.lineBetween(x0, y0 + d, x0 + s, y0 + d);
+    }
     if (def.range) {
       g.lineStyle(1.5, col, 0.5);
-      g.strokeCircle(tx * T + T / 2, ty * T + T / 2, def.range);
+      g.strokeCircle(x0 + s / 2, y0 + s / 2, def.range);
     }
     this.ghostReason = c.ok ? null : c.reason;
   }

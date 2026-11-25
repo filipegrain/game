@@ -91,8 +91,10 @@ const Combat = {
     let best = null, bestD = Infinity;
     for (const e of this.scene.enemies) {
       if (!e.alive) continue;
+      const dx = e.x - x, dy = e.y - y, reach = Math.min(range, bestD) + e.radius;
+      if (dx > reach || -dx > reach || dy > reach || -dy > reach) continue;   // cheap box reject before the sqrt
       if (!filter(e)) continue;
-      const d = Math.hypot(e.x - x, e.y - y) - e.radius;
+      const d = Math.sqrt(dx * dx + dy * dy) - e.radius;
       if (d <= range && d < bestD) { bestD = d; best = e; }
     }
     return best;

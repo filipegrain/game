@@ -147,7 +147,7 @@ class Unit {
 
   clearNav() { this.nav.goal = null; this.nav.path = null; }
 
-  edgeDist(x, y) { return Math.hypot(this.x - x, this.y - y) - this.radius; }
+  edgeDist(x, y) { const dx = this.x - x, dy = this.y - y; return Math.sqrt(dx * dx + dy * dy) - this.radius; }
 
   syncGfx() {
     if (!this.gfx) return;   // destroyed mid-update (e.g. killed by Thorn Mail while attacking)

@@ -1,5 +1,4 @@
-// Balance simulation report: aggregates SimRecorder results, raises balance flags, renders Markdown,
-// saves the last report to localStorage and downloads files.
+// Balance simulation report: aggregates SimRecorder results, raises balance flags and renders Markdown.
 
 const SimReport = {
   DIFFS: Object.keys(CONFIG.difficulty),
@@ -267,28 +266,4 @@ const SimReport = {
         Object.entries(r.items).map(([k, v]) => k + v).join(' ') || '–']));
     return L.join('\n');
   },
-
-  // ------------------------------------------------------------------ storage / download
-  save(rep) {
-    const key = CONFIG.sim.storageKey;
-    try { localStorage.setItem(key, JSON.stringify(rep)); return; } catch (e) { /* too big: drop per-wave detail */ }
-    try {
-      const slim = Object.assign({}, rep, { runs: rep.runs.map(r => Object.assign({}, r, { waves: [], purchases: [] })) });
-      localStorage.setItem(key, JSON.stringify(slim));
-    } catch (e) { /* ignore */ }
-  },
-
-  load() {
-    try { return JSON.parse(localStorage.getItem(CONFIG.sim.storageKey) || 'null'); } catch (e) { return null; }
-  },
-
-  download(name, text, type) {
-    const url = URL.createObjectURL(new Blob([text], { type }));
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
-
-  fileStem(rep) { return 'balance-report-' + rep.generated.slice(0, 19).replace(/[:T]/g, '-'); },
 };

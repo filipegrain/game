@@ -58,9 +58,16 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 
 ## Balance simulation
 
-**Simulate** on the main menu opens a setup panel. Pick heroes, difficulties, strategies, seeds per combination and a wave cap, then **Run**. A bot plays each combination in the real game at high speed. You can watch it, or cancel and keep a report of the runs that finished.
+The simulation runs headless, in several Chrome windows at once. A bot plays each hero, difficulty, strategy and seed in the real game at high speed:
 
-The report screen shows waves survived (about one per minute) per hero, strategy and difficulty, plus automatic balance flags. **Download .md** gives the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. **Download .json** gives the raw data for diffing two balance passes. **Last report** on the menu reopens the most recent one. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
+```
+node .claude/skills/verify-castle-defense/scripts/cdg.mjs launch
+node tools/simpar.mjs                                  # full sweep, one window per two logical cores
+node tools/simpar.mjs 6 '{"heroes":["mage"],"seeds":5,"waveCap":20}'
+node .claude/skills/verify-castle-defense/scripts/cdg.mjs stop
+```
+
+It writes a report to `.verify/artifacts/` as `.md` and `.json`. The Markdown report shows waves survived (about one per minute) per hero, strategy and difficulty, plus automatic balance flags and the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. The JSON holds the raw data for diffing two balance passes. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
 
 ## Development
 
@@ -71,7 +78,7 @@ The report screen shows waves survived (about one per minute) per hero, strategy
 src/
   config.js    tunable numbers
   main.js      Phaser boot
-  scenes/      Menu, Game (simulation), UI (HUD), GameOver, SimScenes (balance sim setup/progress/report)
+  scenes/      Menu, Game (simulation), UI (HUD), GameOver, MapEditor
   sim/         balance simulation: runner, bot, recorder, report
   entities/    Unit base, Hero, Enemy (also neutral camps), Ally (lane creeps), Building, Tower (lane towers), Keep, Projectile
   heroes/      Warrior and Mage skill kits

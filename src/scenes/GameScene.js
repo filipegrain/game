@@ -59,7 +59,7 @@ class GameScene extends Phaser.Scene {
       this.ui = { isOverUI: () => false, toggleBuildPanel() { } };
       this.recorder = new SimRecorder(this);
       this.bot = new SimBot(this, this.simJob.strategy);
-      SimRunner.attach(this);
+      this.cameras.main.setVisible(false);
       return;
     }
 
@@ -434,7 +434,7 @@ class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- loop
   update(time, delta) {
-    if (this.simJob) { this.simUpdate(delta); return; }
+    if (this.simJob) { this.simUpdate(); return; }
     const realDt = Math.min(delta / 1000, 0.05);
     this.updateCamera(realDt);
     this.pings = this.pings.filter(p => (p.t -= realDt) > 0);
@@ -446,15 +446,13 @@ class GameScene extends Phaser.Scene {
   }
 
   // Balance simulation: as many fixed steps as fit in the frame budget. Hitstop and pause don't apply.
-  simUpdate(delta) {
-    const S = CONFIG.sim, t0 = performance.now(), budget = SimRunner.budget();
-    let steps = 0;
+  simUpdate() {
+    const S = CONFIG.sim, t0 = performance.now();
     try {
-      while (!this.ended && performance.now() - t0 < budget) {
+      while (!this.ended && performance.now() - t0 < S.frameBudgetMs) {
         this.bot.update(S.step);
         this.step(S.step);
         this.recorder.update(S.step);
-        steps++;
         if (!this.ended) SimRunner.checkRunEnd(this);
       }
     } catch (err) {
@@ -462,11 +460,6 @@ class GameScene extends Phaser.Scene {
       console.error('[sim] run crashed', this.simJob, err);
       this.recorder.error = String(err && err.stack || err).split('\n').slice(0, 3).join(' | ');
       if (!this.ended) SimRunner.endRun(this, 'error');
-    }
-    SimRunner.onFrame(this, steps * S.step, delta);
-    if (SimRunner.watch && !this.ended) {
-      this.updateCamera(Math.min(delta / 1000, 0.05));
-      this.drawOverlays();
     }
   }
 

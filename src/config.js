@@ -222,15 +222,13 @@ const CONFIG = {
   score: { perWave: 100, perKill: 2, perLevel: 50, perSecond: 0.5 },
 
   // ---------------------------------------------------------------- BALANCE SIMULATION
-  // Menu → Simulate. A bot plays every selected hero × difficulty × strategy × seed in the real GameScene.
+  // Headless only (tools/simpar.mjs). A bot plays every selected hero × difficulty × strategy × seed in the real GameScene.
   sim: {
     step: 1 / 30,            // fixed sim tick (s). Kept below the game's 0.05 clamp so Charge/skillshots don't tunnel.
     frameBudgetMs: 14,       // real ms per frame spent stepping the simulation (at 60 fps)
-    maxFrameBudgetMs: 200,   // when frames are throttled (background tab), step up to this long per frame
     defaultSeeds: 3,
     defaultWaveCap: 30,      // waves are one minute apart: the cap is roughly minutes survived
     baseSeed: 1000,          // seed index i uses baseSeed + i (same seeds for every combination)
-    storageKey: 'cd_sim_last',
 
     bot: {
       thinkEvery: 0.25,      // s between movement decisions

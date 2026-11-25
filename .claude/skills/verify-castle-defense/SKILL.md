@@ -70,7 +70,7 @@ Write proof to `.verify/artifacts/<feature-id>/`, which git ignores. A proof con
 
 Drive the real player path with keys and clicks. Use `eval` to read state and find targets, never to cause the behaviour under test. Calling `gs.waves.tick()`, `picks.pick()` or setting `hero.x` directly proves nothing about input, the HUD or `isOverUI`. If you must use a setter as setup to reach a precondition, such as dropping keep HP to reach game over, say so in the report and still drive the step under test through input.
 
-The game runs in real time and can't be fast-forwarded through input. A wave-1 level-up takes about 35–40 s. For balance and long-run questions, use the in-game Menu → Simulate (`SimRunner`), not this harness.
+The game runs in real time and can't be fast-forwarded through input. A wave-1 level-up takes about 35–40 s. For balance and long-run questions, run the headless balance sim (`node tools/simpar.mjs`, see README), not this harness.
 
 ## Cleanup
 

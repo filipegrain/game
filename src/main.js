@@ -9,5 +9,5 @@ const game = new Phaser.Game({
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   render: { antialias: true },
   disableContextMenu: true,
-  scene: [MenuScene, GameScene, UIScene, GameOverScene, SimSetupScene, SimHudScene, SimReportScene, MapEditorScene],
+  scene: [MenuScene, GameScene, UIScene, GameOverScene, MapEditorScene],
 });

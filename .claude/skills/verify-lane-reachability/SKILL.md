@@ -1,6 +1,6 @@
 ---
 name: verify-lane-reachability
-description: Exhaustively checks, on the real game code, that enemies can always walk from every spawn to the Keep along their own lane (past that lane's towers), that creeps reach their lane's enemy spawn, and that no building the player can legally place, alone or piled up on the route, walls a spawn off. Use whenever a change touches the map grid, spawns, lane towers or camps in src/config.js, building placement rules (BuildSystem.check/checkPlace, Building, Keep tiers), or Pathing's flow fields and lane routing.
+description: Exhaustively checks, on the real game code, that enemies can always walk from every spawn to the Keep along their own lane (past that lane's towers), that creeps reach their lane's enemy spawn, and that no building the player can legally place, alone or piled up on the route, walls a spawn off. Use whenever a change touches the map grid, spawns, lane towers or camps in src/map.js (including saves from the map editor), building placement rules (BuildSystem.check/checkPlace, Building, Keep tiers), or Pathing's flow fields and lane routing.
 ---
 
 # Verify lane reachability
@@ -54,8 +54,8 @@ If a design change legitimately alters the promise (for example, a lane without 
 
 | Check | Code it covers |
 | --- | --- |
-| P1 | `src/config.js` `map.grid`, `map.keep`, `map.spawns`, `map.towers`, `map.camps`, `map.grassCost`; `src/systems/Pathing.js` `buildMap`, `isWalkable`, `fillField`, `computeFlowField`, `flowNext`, `nearestWalkable` |
-| P2 | `src/systems/Pathing.js` `laneNext`, `bridgeDist`, `spawnDist`; `src/entities/Tower.js` position; `src/config.js` `map.towers` order |
+| P1 | `src/map.js` `grid`, `keep`, `spawns`, `towers`, `camps`; `src/config.js` `map.grassCost`; `src/systems/Pathing.js` `buildMap`, `isWalkable`, `fillField`, `computeFlowField`, `flowNext`, `nearestWalkable` |
+| P2 | `src/systems/Pathing.js` `laneNext`, `bridgeDist`, `spawnDist`; `src/entities/Tower.js` position; `src/map.js` `towers` order |
 | P3 | `src/systems/BuildSystem.js` `check`, `checkPlace`; `src/entities/Building.js` (`fp`); `src/entities/Keep.js` tiers; `src/config.js` `buildings`, `map.spawnClear`, `map.campClear`; `src/systems/Pathing.js` `isBuildable`, `forEachFootprint`, `wouldDisconnect` |
 | P4 | as P3, plus `src/systems/Pathing.js` `occupyBuilding` |
 

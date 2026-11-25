@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Exhaustive check of the reachability promises on the REAL game code (no hand model).
-// Loads src/config.js, src/systems/Pathing.js, src/entities/{Building,Tower,Keep}.js and src/systems/BuildSystem.js
+// Loads src/map.js, src/config.js, src/systems/Pathing.js, src/entities/{Building,Tower,Keep}.js and src/systems/BuildSystem.js
 // into a Node vm the way index.html's <script> tags would, with rendering/sound stubbed out.
 //
 //   node check.mjs              run the properties against the working tree
@@ -14,13 +14,13 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-const FILES = ['src/config.js', 'src/systems/Pathing.js', 'src/entities/Building.js', 'src/entities/Tower.js', 'src/entities/Keep.js', 'src/systems/BuildSystem.js'];
+const FILES = ['src/map.js', 'src/config.js', 'src/systems/Pathing.js', 'src/entities/Building.js', 'src/entities/Tower.js', 'src/entities/Keep.js', 'src/systems/BuildSystem.js'];
 
 // Broken variants used to prove the check can fail. Each is a literal text edit on one real source file.
 const MUTANTS = {
   'build-allows-trees-and-rocks': { file: 'src/systems/BuildSystem.js', find: 'else if (!p.isBuildable(x, y)) terrain = true;', replace: '', expect: 'P3' },
   'route-rule-skipped': { file: 'src/systems/BuildSystem.js', find: 'if (this.scene.pathing.wouldDisconnect(tx, ty, CONFIG.buildings.footprint))', replace: 'if (false)', expect: 'P4' },
-  'spawn-inside-rock': { file: 'src/config.js', find: "{ name: 'MID', x: 114.5, y: 32 }", replace: "{ name: 'MID', x: 119.5, y: 67 }", expect: 'P1' },
+  'spawn-inside-rock': { file: 'src/map.js', find: "{ name: 'MID', x: 114.5, y: 32 }", replace: "{ name: 'MID', x: 119.5, y: 67 }", expect: 'P1' },
   'flow-field-hole': { file: 'src/systems/Pathing.js', find: 'if (nd < field[ni]) { field[ni] = nd; heap.push(ni, nd); }', replace: 'if (nd < field[ni] && !(nx === 60 && ny === 60)) { field[ni] = nd; heap.push(ni, nd); }', expect: 'P1' },
   'bridge-waypoint-skipped': { file: 'src/systems/Pathing.js', find: 'if (unit.viaBridge) {', replace: 'if (false) {', expect: 'P2' },
 };

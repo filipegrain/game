@@ -18,7 +18,7 @@ Waves are timed: the first comes after `CONFIG.waves.firstDelay` s, then one eve
 
 Preconditions:
 
-- `node $CDG start warrior medium`. Optionally place an arrow tower first (see `build.md`). With the hero idle next to the Keep, the first level-up arrives during wave 1.
+- `node $CDG start warrior normal`. Optionally place an arrow tower first (see `build.md`). With the hero idle next to the Keep, the first level-up arrives during wave 1.
 
 - **Tick.** Run `node $CDG wait "game.scene.getScene('GameScene').waves.wave>=1" 60000`. `state` shows `wave:1`, gold up by `CONFIG.waves.tickGoldBase` and `allies` 15.
 - **Enemies.** Run `node $CDG wait "game.scene.getScene('GameScene').enemies.length>0" 10000`. Then `node $CDG shot waves-picks/wave1.png`.

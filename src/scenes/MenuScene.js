@@ -4,7 +4,7 @@ class MenuScene extends Phaser.Scene {
   constructor() { super('MenuScene'); }
 
   init(data) {
-    this.choice = { hero: (data && data.hero) || this.choice?.hero || 'warrior', difficulty: (data && data.difficulty) || this.choice?.difficulty || 'medium' };
+    this.choice = { hero: (data && data.hero) || this.choice?.hero || 'warrior', difficulty: (data && data.difficulty) || this.choice?.difficulty || 'normal' };
   }
 
   create() {
@@ -26,8 +26,9 @@ class MenuScene extends Phaser.Scene {
 
     this.add.text(640, 470, 'DIFFICULTY', { fontFamily: FONT, fontSize: '16px', color: '#9ca3af', fontStyle: 'bold' }).setOrigin(0.5);
     this.diffBtns = {};
-    ['easy', 'medium', 'hard'].forEach((d, i) => {
-      const x = 400 + i * 170, y = 490;
+    const diffs = Object.keys(CONFIG.difficulty);
+    diffs.forEach((d, i) => {
+      const x = 640 - diffs.length * 85 + 10 + i * 170, y = 490;
       const r = this.add.rectangle(x, y, 150, 44, 0x1f2937).setOrigin(0).setStrokeStyle(2, 0x4b5563).setInteractive({ useHandCursor: true });
       const label = CONFIG.difficulty[d].label;
       let best = 0;
@@ -54,7 +55,8 @@ class MenuScene extends Phaser.Scene {
       r.on('pointerdown', () => { Sfx.resume(); Sfx.play('click'); fn(); });
     };
     small(330, 'Simulate', () => this.scene.start('SimSetupScene'));
-    if (SimReport.load()) small(780, 'Last report', () => this.scene.start('SimReportScene'));
+    small(780, 'Map Editor', () => this.scene.start('MapEditorScene'));
+    if (SimReport.load()) small(140, 'Last report', () => this.scene.start('SimReportScene'));
 
     this.add.text(640, 660, 'Right-click move · QWER skills · V build · U upgrade Keep · hold Space look around · P pause',
       { fontFamily: FONT, fontSize: '13px', color: '#6b7280' }).setOrigin(0.5);

@@ -5,7 +5,7 @@ class GameScene extends Phaser.Scene {
 
   init(data) {
     this.heroKey = data.hero || 'warrior';
-    this.diffKey = data.difficulty || 'medium';
+    this.diffKey = data.difficulty || 'normal';
     this.diff = CONFIG.difficulty[this.diffKey];
     this.simJob = data.sim || null;     // balance simulation run (see SimRunner)
   }

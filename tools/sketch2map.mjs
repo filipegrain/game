@@ -1,6 +1,6 @@
 // Converts a palette map sketch (PNG) into the CONFIG.map grid and marker positions.
 // Usage: node tools/sketch2map.mjs <sketch.png> [cols] [rows]
-// Prints a JS snippet to paste into src/config.js (map.grid, keep, spawns, towers, camps).
+// Prints a JS snippet to paste into src/map.js (grid, plus marker positions as comments).
 import { readPng } from './png.mjs';
 
 const [, , file, colsArg, rowsArg] = process.argv;

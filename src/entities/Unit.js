@@ -162,14 +162,16 @@ class Unit {
 }
 
 // Light push-apart between units of the same team (units never block each other).
+// Sort-and-sweep on x: a pair is checked only while their x gap can still overlap.
 function separateUnits(list, strength = 60, dt = 0.016) {
-  const n = list.length;
+  const sorted = list.filter(u => u.alive).sort((a, b) => a.x - b.x), n = sorted.length;
+  let maxR = 0;
+  for (const u of sorted) if (u.radius > maxR) maxR = u.radius;
   for (let i = 0; i < n; i++) {
-    const a = list[i];
-    if (!a.alive) continue;
+    const a = sorted[i], reach = (a.radius + maxR) * 0.85;
     for (let j = i + 1; j < n; j++) {
-      const b = list[j];
-      if (!b.alive) continue;
+      const b = sorted[j];
+      if (b.x - a.x >= reach) break;
       const dx = b.x - a.x, dy = b.y - a.y;
       const min = (a.radius + b.radius) * 0.85;
       const d2 = dx * dx + dy * dy;

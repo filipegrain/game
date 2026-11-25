@@ -2,7 +2,7 @@
 // saves the last report to localStorage and downloads files.
 
 const SimReport = {
-  DIFFS: ['easy', 'medium', 'hard'],
+  DIFFS: Object.keys(CONFIG.difficulty),
 
   mean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0; },
   median(a) { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; },

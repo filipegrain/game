@@ -19,7 +19,7 @@ The player opens the build panel, picks a building, sees a green or red placemen
 
 Preconditions:
 
-- `node $CDG start warrior medium` (300 gold, Keep tier 1 so only `arrow` is unlocked).
+- `node $CDG start warrior normal` (300 gold, Keep tier 1 so only `arrow` is unlocked).
 
 - **Find a valid tile.** Run `node $CDG eval "(() => { const gs = game.scene.getScene('GameScene'), h = gs.hero, out = []; for (let ty = 0; ty < CONFIG.MAP_H; ty++) for (let tx = 0; tx < CONFIG.MAP_W; tx++) if (gs.build.check('arrow', tx, ty).ok) out.push({ tx, ty, wx: CONFIG.px(tx) + 16, wy: CONFIG.px(ty) + 16, d: Math.hypot(CONFIG.px(tx) - h.x, CONFIG.px(ty) - h.y) }); out.sort((a, b) => a.d - b.d); return out.slice(0, 3); })()"`. At commit 4a5cb6e the nearest one was tile (5,26), world (176,848).
 - **Open and pick.** Run `node $CDG key KeyV` then `node $CDG key Digit1`. `state.placing` is `"arrow"`.

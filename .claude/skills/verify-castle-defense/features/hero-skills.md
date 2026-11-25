@@ -21,7 +21,7 @@ The player moves the hero with right-click and casts Q/W/E/R. Aim skills need a 
 
 Preconditions:
 
-- `node $CDG start mage easy` (or `warrior` for the Dash steps). The hero starts at about world (284,720).
+- `node $CDG start mage normal` (or `warrior` for the Dash steps). The hero starts at about world (284,720).
 
 - **Move.** Run `node $CDG wclick 584 720 right`. `node $CDG eval "game.scene.getScene('GameScene').hero.order"` shows `{type:"move", x≈583, y≈719}`. Then `node $CDG wait "Math.abs(game.scene.getScene('GameScene').hero.x-584)<20" 5000` returns ok in under 1 s.
 - **Aim.** Run `node $CDG wmove 784 720` then `node $CDG key KeyE`. `state` shows `hero.aiming: "E"`. Run `node $CDG shot hero-skills/aim-E.png` to capture the aim indicator.

@@ -20,13 +20,14 @@ const HELP = `cdg — drive Castle Defense (headless Chrome + CDP)
 
   launch [--headed]          start static server + Chrome on free ports, wait for MenuScene
   doctor                     read-only health check of the instance this checkout launched
-  start <hero> <difficulty>  MenuScene -> GameScene (warrior|mage, easy|medium|hard) via the START flow
+  start <hero> <difficulty>  MenuScene -> GameScene (warrior|mage, normal|hard) via the START flow
   state                      compact JSON snapshot of scenes and game state
   eval <js>                  evaluate JS in the page (globals: game, CONFIG, ...); prints JSON result
   wait <js> [timeoutMs]      poll until the JS expression is truthy (default 10000 ms)
   key <Code> [--down|--up] [--hold ms]   key press by KeyboardEvent.code (KeyQ, Digit1, Space, Escape, Enter...)
   move <x> <y>               move the mouse to game coords (1280x720 canvas space)
   click <x> <y> [left|right] click at game coords
+  drag <x1> <y1> <x2> <y2> [...] [left|right|middle]  press, move through the points, release (game coords)
   wclick <wx> <wy> [left|right]  click at WORLD coords (converted through the GameScene camera)
   wmove <wx> <wy>            move the mouse to WORLD coords
   shot <file.png>            screenshot (relative paths go under .verify/artifacts/)
@@ -111,7 +112,7 @@ async function worldToGame(c, wx, wy) {
 
 async function mouse(c, type, x, y, button = 'none') {
   const p = await toCss(c, x, y);
-  const buttons = { none: 0, left: 1, right: 2 }[button];
+  const buttons = { none: 0, left: 1, right: 2, middle: 4 }[button];
   await c.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button, buttons: type === 'mouseReleased' ? 0 : buttons, clickCount: type === 'mouseMoved' ? 0 : 1 });
 }
 
@@ -195,7 +196,7 @@ async function launch(headed) {
   const server = spawn(process.execPath, [fileURLToPath(import.meta.url), '__serve', REPO, String(port)], opts);
   server.unref();
   const chromeArgs = [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-    '--autoplay-policy=no-user-gesture-required', `--window-size=${VIEW_W},${VIEW_H}`, '--disable-background-timer-throttling',
+    '--autoplay-policy=no-user-gesture-required', '--mute-audio', `--window-size=${VIEW_W},${VIEW_H}`, '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', 'about:blank'];
   if (!headed) chromeArgs.unshift('--headless=new');
   const chrome = spawn(findChrome(), chromeArgs, opts);
@@ -294,11 +295,11 @@ async function main() {
       }
       case 'start': {
         const [hero, diff] = a;
-        if (!['warrior', 'mage'].includes(hero) || !['easy', 'medium', 'hard'].includes(diff)) die('usage: start <warrior|mage> <easy|medium|hard>');
+        if (!['warrior', 'mage'].includes(hero) || !['normal', 'hard'].includes(diff)) die('usage: start <warrior|mage> <normal|hard>');
         if (!(await evaluate(c, `game.scene.isActive('MenuScene')`))) die('MenuScene is not active');
-        // hero cards: warrior at (340,180), mage at (660,180), 280x270. Difficulty buttons at x=400+i*170, y=490, 150x44. START at (540,570) 200x54.
+        // hero cards: warrior at (340,180), mage at (660,180), 280x270. Difficulty buttons (normal, hard) at x=480+i*170, y=490, 150x44. START at (540,570) 200x54.
         await click(c, hero === 'warrior' ? 480 : 800, 300);
-        await click(c, 400 + ['easy', 'medium', 'hard'].indexOf(diff) * 170 + 75, 512);
+        await click(c, 480 + ['normal', 'hard'].indexOf(diff) * 170 + 75, 512);
         await click(c, 640, 597);
         const t0 = Date.now();
         while (!(await evaluate(c, `game.scene.isActive('GameScene') && game.scene.isActive('UIScene')`))) {
@@ -316,6 +317,16 @@ async function main() {
       }
       case 'move': await mouse(c, 'mouseMoved', +a[0], +a[1]); break;
       case 'click': await click(c, +a[0], +a[1], a[2] || 'left'); break;
+      case 'drag': {   // press at the first point, move through the rest, release at the last
+        const pts = []; for (let i = 0; i + 1 < a.length && !isNaN(+a[i]); i += 2) pts.push([+a[i], +a[i + 1]]);
+        const button = isNaN(+a[a.length - 1]) ? a[a.length - 1] : 'left';
+        if (pts.length < 2) die('usage: drag <x1> <y1> <x2> <y2> [...] [left|right|middle]');
+        await mouse(c, 'mouseMoved', ...pts[0]);
+        await mouse(c, 'mousePressed', ...pts[0], button);
+        for (const [x, y] of pts.slice(1)) { await sleep(20); await mouse(c, 'mouseMoved', x, y, button); }
+        await sleep(20); await mouse(c, 'mouseReleased', ...pts[pts.length - 1], button);
+        break;
+      }
       case 'wmove': { const p = await worldToGame(c, +a[0], +a[1]); await mouse(c, 'mouseMoved', p.x, p.y); break; }
       case 'wclick': {
         const p = await worldToGame(c, +a[0], +a[1]);

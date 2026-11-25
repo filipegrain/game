@@ -252,8 +252,8 @@ class SimBot {
     return cov;
   }
 
-  // Towers: grass spots covering the lane the most Keep damage came from (near its first tower), else round-robin.
-  // Mines: grass spots near the Keep that cover no lane. The route rule is checked on the winner only.
+  // Towers: buildable spots covering the lane the most Keep damage came from (near its first tower), else round-robin.
+  // Mines: buildable spots near the Keep that cover the least lane. The route rule is checked on the winner only.
   pickSpot(type) {
     const sc = this.scene, p = sc.pathing, def = CONFIG.buildings[type], T = CONFIG.TILE;
     const isTower = !!def.range;
@@ -265,9 +265,6 @@ class SimBot {
     for (let ty = 0; ty < p.H; ty++) for (let tx = 0; tx < p.W; tx++) {
       const d = Math.hypot(tx + 1 - anchor.x, ty + 1 - anchor.y);
       if (d > 14) continue;
-      let grass = true;
-      p.forEachFootprint(tx, ty, CONFIG.buildings.footprint, (x, y) => { if (p.tileType(x, y) !== TILE_T.GRASS) grass = false; });
-      if (!grass) continue;
       const c = sc.build.check(type, tx, ty);
       if (!c.ok && !c.gold) continue;
       const cov = this.coverage(tx, ty, isTower ? def.range : 160);

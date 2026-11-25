@@ -151,7 +151,7 @@ const STATE_JS = `(() => {
             cooldowns: Object.fromEntries(Object.entries(h.cooldowns).map(([a, b]) => [a, r(b)])), aiming: h.aiming,
             order: h.order ? h.order.type || true : null, items: h.itemLevels },
     keep: { hp: r(k.hp), maxHp: k.maxHp, tier: k.tier },
-    difficulty: gs.diffKey, gold: gs.economy.gold, wave: w.wave, phase: w.phase, timer: r(w.timer),
+    difficulty: gs.diffKey, gold: gs.economy.gold, wave: w.wave, phase: w.phase,
     enemies: gs.enemies.filter(e => e.alive).length, allies: gs.allies.filter(a => a.alive).length,
     buildings: gs.buildings.map(b => ({ type: b.type, level: b.level, tx: b.tx, ty: b.ty })),
     placing: gs.build.placing, selected: gs.build.selected ? (gs.build.selected === k ? 'keep' : gs.build.selected.type) : null,

@@ -1,4 +1,4 @@
-// Build phase → wave phase → clear → next build phase. Endless scaling.
+// Build phase (until the player starts the wave) → wave phase → clear → next build phase. Endless scaling.
 
 class WaveManager {
   constructor(scene, diff) {
@@ -6,7 +6,6 @@ class WaveManager {
     this.diff = diff;
     this.wave = 0;               // last wave started
     this.phase = 'build';        // 'build' | 'wave'
-    this.timer = diff.buildTime + CONFIG.waves.firstBuildBonus;
     this.queues = [];            // per lane: list of { type, delay }
     this.spawned = 0;
     this.toSpawn = 0;
@@ -47,12 +46,6 @@ class WaveManager {
 
   startWave() {
     if (this.phase !== 'build') return;
-    const early = Math.max(0, Math.floor(this.timer));
-    if (early > 0) {
-      const bonus = early * CONFIG.waves.earlyGoldPerSec;
-      this.scene.economy.add(bonus);
-      this.scene.events.emit('notice', 'Early start: +' + bonus + ' gold');
-    }
     const plan = this.next;
     this.wave = plan.n;
     this.phase = 'wave';
@@ -95,11 +88,7 @@ class WaveManager {
   }
 
   update(dt) {
-    if (this.phase === 'build') {
-      this.timer -= dt;
-      if (this.timer <= 0) { this.timer = 0; this.startWave(); }
-      return;
-    }
+    if (this.phase === 'build') return;
     // spawning
     for (const lq of this.lanesQ) {
       lq.t += dt;
@@ -129,7 +118,6 @@ class WaveManager {
     this.scene.leveling.addXp(W.clearXpBase + W.clearXpPerWave * n);
     this.scene.stats.wavesCleared = n;
     this.phase = 'build';
-    this.timer = this.diff.buildTime;
     Sfx.play('gold');
     this.scene.events.emit('waveCleared', n, gold + mineGold);
   }

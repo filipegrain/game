@@ -41,14 +41,13 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 | 1–5 | Place Arrow Tower / Cannon / Frost Tower / Barracks / Gold Mine |
 | Left-click a building | Select it (upgrade, sell) |
 | U | Upgrade the Keep |
-| F | Rally allies to a spot (press F twice to return them to auto mode) |
-| N / Enter | Start the next wave early (bonus gold) |
+| N / Enter | Start the next wave |
 
 **Other:** **P** or **Esc** pauses (Esc first cancels placing, aiming or menus), **M** mutes.
 
 ## How it plays
 
-- **Waves:** a build-phase countdown comes before each wave. Starting early pays bonus gold. Every fifth wave includes a boss, and the waves scale forever.
+- **Waves:** each wave starts when you press N, so build as long as you like in between. Every fifth wave includes a boss, and the waves scale forever.
 - **Buildings** can't be damaged; enemies only fight the hero, allies and the Keep. Sappers ignore everything and rush the Keep.
 - **Keep tiers (1–4):** each tier adds HP and more allies, unlocks new buildings, and later gives the Keep its own attack and auto-repair.
 - **Leveling:** no level cap. All skills are available from the start, grow stronger every level, and unlock extra effects at milestone levels. There is no mana, only cooldowns.

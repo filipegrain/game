@@ -134,7 +134,7 @@ class UIScene extends Phaser.Scene {
     this.nextText = this.text(450, 16, '', 12, '#ff8a8a').setOrigin(0, 0.5);
     this.startBtn = this.button(640, 4, 180, 24, 'Start Next Wave (N)', () => this.gs.waves.startWave(), {
       color: 0x7a2a2a, hover: 0x9a3a3a, stroke: 0xff6060, size: 12,
-      tip: () => 'Start the next wave now.\nBonus: ' + CONFIG.waves.earlyGoldPerSec + ' gold per second remaining.',
+      tip: () => 'Start the next wave (N).',
     });
     this.text(845, 16, 'KEEP', 11, '#9ca3af', { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.keepBarG = this.add.graphics().setDepth(UI_DEPTH.content);
@@ -281,7 +281,6 @@ class UIScene extends Phaser.Scene {
     }
     const h = gs.hero;
     if (h.alive) { g.fillStyle(0xffffff, 1); g.fillCircle(X + h.x * s, Y + h.y * s, 3.5); g.fillStyle(h.color, 1); g.fillCircle(X + h.x * s, Y + h.y * s, 2.2); }
-    if (gs.allyCommand.rally) { g.fillStyle(0x4a8fe0, 1); g.fillTriangle(X + gs.allyCommand.rally.x * s, Y + gs.allyCommand.rally.y * s - 6, X + gs.allyCommand.rally.x * s + 5, Y + gs.allyCommand.rally.y * s - 4, X + gs.allyCommand.rally.x * s, Y + gs.allyCommand.rally.y * s - 2); }
     // next/active lanes
     const blink = (Math.sin(this.time.now / 180) + 1) / 2;
     for (const l of gs.waves.nextLanes || []) {
@@ -300,14 +299,10 @@ class UIScene extends Phaser.Scene {
   // ------------------------------------------------------------------ right column + build panel
   createRightColumn() {
     const X = 1206, W = 68;
-    this.region(X - 2, 48, W + 4, 192);
+    this.region(X - 2, 48, W + 4, 132);
     this.colBtns = {
       build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-5 place buildings' }),
       keep: this.button(X, 110, W, 66, 'KEEP\n(U)', () => this.gs.upgradeKeep(), { size: 12, color: 0x4a3a10, hover: 0x6a5418, stroke: 0xffd23f, tip: () => this.keepTip() }),
-      rally: this.button(X, 180, W, 56, 'RALLY\n(F)', () => {
-        if (this.gs.cursorMode === 'rally') { this.gs.allyCommand.setAuto(); this.gs.setCursorMode(null); }
-        else this.gs.setCursorMode('rally');
-      }, { size: 12, color: 0x1e3a66, hover: 0x2a4f88, stroke: 0x4a8fe0, tip: () => 'Rally allies (F), then left-click a spot.\nF twice: back to automatic.\nMode: ' + this.gs.allyCommand.mode }),
     };
   }
 
@@ -529,7 +524,7 @@ class UIScene extends Phaser.Scene {
       'Self-cast skills fire on key press. Mage Fire Bolt autocasts at your attack target (Q toggles).',
       'V: build panel   1-5: place building   Right-click / Esc: cancel',
       'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep   Buildings cannot be damaged',
-      'Level up: pick 1 of 3 items (game pauses)   F: rally allies (F twice: auto)   N: start next wave early',
+      'Level up: pick 1 of 3 items (game pauses)   N: start the next wave',
       'Camera follows the hero. Hold Space to look around (screen edges, middle-drag, minimap)',
       'P / Esc: pause   M: mute',
     ].join('\n'), { fontFamily: FONT, fontSize: '15px', color: '#e5e7eb', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
@@ -596,10 +591,10 @@ class UIScene extends Phaser.Scene {
     this.setText(this.goldText, 'gold', String(gs.economy.gold));
     this.setText(this.waveText, 'wave', 'Wave ' + wv.wave);
     if (wv.phase === 'build') {
-      this.setText(this.phaseText, 'phase', 'Build phase  ' + Math.ceil(wv.timer) + 's');
+      this.setText(this.phaseText, 'phase', 'Build phase');
       this.setText(this.nextText, 'next', 'Next: ' + wv.next.lanes.map(l => CONFIG.map.lanes[l].name).join(' · ') + (wv.next.bosses ? '  (BOSS)' : ''));
       this.startBtn.setVisible(true);
-      this.setText(this.startBtn.txt, 'startT', 'Start Wave ' + wv.next.n + '  +' + Math.floor(wv.timer) * CONFIG.waves.earlyGoldPerSec + 'g');
+      this.setText(this.startBtn.txt, 'startT', 'Start Wave ' + wv.next.n + ' (N)');
     } else {
       const left = gs.enemies.length + (wv.toSpawn - wv.spawned);
       this.setText(this.phaseText, 'phase', 'Enemies left: ' + left);
@@ -616,7 +611,6 @@ class UIScene extends Phaser.Scene {
     this.setText(this.keepHpText, 'khp', Math.ceil(k.hp) + ' / ' + k.maxHp + '  T' + k.tier);
     const n = k.nextTierDef;
     this.setText(this.colBtns.keep.txt, 'keepbtn', n ? 'KEEP T' + k.tier + '\n(U) ' + n.cost + 'g' : 'KEEP T' + k.tier + '\nMAX');
-    this.colBtns.rally.bg.setStrokeStyle(2, gs.allyCommand.mode === 'command' || gs.cursorMode === 'rally' ? 0x8fc3ff : 0x4a8fe0);
     this.colBtns.build.bg.setStrokeStyle(2, this.buildOpen ? 0x44ff66 : 0x4b5563);
 
     this.drawHeroPanel(dt);
@@ -635,7 +629,6 @@ class UIScene extends Phaser.Scene {
       hint = 'Placing ' + d.name + ' (' + d.cost + 'g) — left-click to place. Right-click / Esc to cancel.';
       if (gs.build.ghostReason) hint += '\n' + gs.build.ghostReason;
     } else if (gs.cursorMode === 'attack') hint = 'ATTACK-MOVE: left-click a destination (right-click / Esc cancels)';
-    else if (gs.cursorMode === 'rally') hint = 'RALLY: left-click where allies should go. Press F again for automatic mode.';
     else if (h.aiming) hint = CONFIG.skills[h.heroKey][h.aiming].name.toUpperCase() + ': left-click to cast (right-click / Esc cancels)';
     this.setText(this.hintText, 'hint', hint);
 

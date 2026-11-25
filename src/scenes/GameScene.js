@@ -24,7 +24,7 @@ class GameScene extends Phaser.Scene {
     this.buildings = [];
     this.projectiles = [];
     this.stats = { kills: 0, time: 0, wavesCleared: 0 };
-    this.cursorMode = null;      // null | 'attack' | 'rally'
+    this.cursorMode = null;      // null | 'attack'
     this.spaceHeld = false;      // hold Space to look around (camera is otherwise locked on the hero)
     this.rightHeld = false;
     this.followT = 0;
@@ -199,11 +199,6 @@ class GameScene extends Phaser.Scene {
           this.setCursorMode(null);
           return;
         }
-        if (this.cursorMode === 'rally') {
-          this.allyCommand.setRally(wx, wy);
-          this.setCursorMode(null);
-          return;
-        }
         this.selectAt(wx, wy);
       }
     });
@@ -302,11 +297,6 @@ class GameScene extends Phaser.Scene {
     switch (code) {
       case 'KeyA': if (this.hero.alive) this.setCursorMode('attack'); break;
       case 'KeyS': this.hero.commandStop(); this.setCursorMode(null); break;
-      case 'KeyF':
-        if (this.cursorMode === 'rally' || (e.repeat === false && this.lastF && this.time.now - this.lastF < 400)) {
-          this.allyCommand.setAuto(); this.setCursorMode(null); this.lastF = 0;
-        } else { this.setCursorMode('rally'); this.lastF = this.time.now; }
-        break;
       case 'KeyV': this.ui.toggleBuildPanel(); break;
       case 'KeyU': this.upgradeKeep(); break;
       case 'KeyN': case 'Enter': this.waves.startWave(); break;
@@ -584,10 +574,6 @@ class GameScene extends Phaser.Scene {
     if (this.cursorMode === 'attack') {
       ig.lineStyle(2, 0xff4040, 0.9); ig.strokeCircle(w.x, w.y, 12);
       ig.lineBetween(w.x - 16, w.y, w.x + 16, w.y); ig.lineBetween(w.x, w.y - 16, w.x, w.y + 16);
-    } else if (this.cursorMode === 'rally') {
-      ig.lineStyle(2, 0x4a8fe0, 0.9); ig.strokeCircle(w.x, w.y, 30);
-      ig.lineBetween(w.x, w.y, w.x, w.y - 28);
-      ig.fillStyle(0x4a8fe0, 0.9); ig.fillTriangle(w.x, w.y - 28, w.x + 16, w.y - 23, w.x, w.y - 18);
     } else {
       const e = this.enemyAt(w.x, w.y);
       if (e) { ig.lineStyle(2, 0xff4040, 0.6); ig.strokeCircle(e.x, e.y, e.radius + 4); }

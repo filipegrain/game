@@ -39,8 +39,8 @@ All coordinates are **game coordinates**: the 1280×720 canvas space that `CONFI
 | Command | Use |
 | --- | --- |
 | `start <warrior\|mage> <easy\|medium\|hard>` | Clicks the hero card, the difficulty and START on `MenuScene`, then waits for `GameScene` and `UIScene` |
-| `state` | Compact JSON with active scenes, hero (pos, hp, level, xp, cooldowns, aiming, order, items), keep, gold, wave/phase/timer, enemy/ally counts, buildings, placing/selected, picks, paused/ended, stats, camera |
-| `key <Code> [--down\|--up] [--hold ms]` | A real key event by `KeyboardEvent.code`: `KeyQ`…`KeyR`, `KeyA`, `KeyS`, `KeyF`, `KeyV`, `KeyU`, `KeyP`, `KeyM`, `Digit1`…`Digit5`, `Enter`, `Escape`, `Space` |
+| `state` | Compact JSON with active scenes, hero (pos, hp, level, xp, cooldowns, aiming, order, items), keep, gold, wave/phase, enemy/ally counts, buildings, placing/selected, picks, paused/ended, stats, camera |
+| `key <Code> [--down\|--up] [--hold ms]` | A real key event by `KeyboardEvent.code`: `KeyQ`…`KeyR`, `KeyA`, `KeyS`, `KeyV`, `KeyU`, `KeyP`, `KeyM`, `Digit1`…`Digit5`, `Enter`, `Escape`, `Space` |
 | `move x y` / `click x y [left\|right]` | Mouse input at screen (HUD) coordinates |
 | `wmove wx wy` / `wclick wx wy [left\|right]` | The same at **world** coordinates, converted through the `GameScene` camera. Fails if the point is off screen. The camera follows the hero, so move the hero closer first |
 | `wait '<js>' [ms]` | Polls a page expression until it's truthy (default 10 s). Use it instead of sleeping |

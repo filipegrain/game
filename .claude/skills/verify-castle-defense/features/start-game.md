@@ -1,6 +1,6 @@
 # Start a game
 
-The player picks Warrior or Mage and Easy, Medium or Hard on the menu, then starts. The game opens with the hero next to the Keep, the difficulty's starting gold, and a build-phase countdown before wave 1.
+The player picks Warrior or Mage and Easy, Medium or Hard on the menu, then starts. The game opens with the hero next to the Keep, the difficulty's starting gold, and a build phase that lasts until the player starts wave 1.
 
 ## Sub-features
 
@@ -23,7 +23,7 @@ Preconditions:
 - **Click flow.** Run `node $CDG start mage easy`. This clicks the Mage card (800,300), Easy (475,512) and START (640,597). It prints `{"hero":"mage","difficulty":"easy","gold":450}`.
 - **State.** Run `node $CDG state`. `active` is `["GameScene","UIScene"]`, `phase` is `"build"`, `wave` is 0, `gold` matches `CONFIG.difficulty.<d>.startGold`, and the hero is at level 1 with full hp.
 - **Enter flow.** Relaunch, then run `node $CDG key Enter` followed by `node $CDG wait "game.scene.isActive('GameScene')"`. `state` shows warrior and medium with 300 gold.
-- **Proof.** Run `node $CDG shot start-game/in-game.png`. The HUD shows the gold, `Wave 0`, the build-phase timer and the hero panel with the matching hero's skills.
+- **Proof.** Run `node $CDG shot start-game/in-game.png`. The HUD shows the gold, `Wave 0`, `Build phase`, the `Start Wave 1 (N)` button and the hero panel with the matching hero's skills.
 
 ## Gotchas
 

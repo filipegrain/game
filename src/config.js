@@ -41,14 +41,13 @@ const CONFIG = {
 
   // ---------------------------------------------------------------- DIFFICULTY
   difficulty: {
-    easy:   { label: 'Easy',   enemyMul: 0.75, scaling: 0.75, startGold: 450, buildTime: 30, scoreMul: 0.75 },
-    medium: { label: 'Medium', enemyMul: 1.0,  scaling: 1.0,  startGold: 300, buildTime: 25, scoreMul: 1.0 },
-    hard:   { label: 'Hard',   enemyMul: 1.3,  scaling: 1.3,  startGold: 200, buildTime: 20, scoreMul: 1.5 },
+    easy:   { label: 'Easy',   enemyMul: 0.75, scaling: 0.75, startGold: 450, scoreMul: 0.75 },
+    medium: { label: 'Medium', enemyMul: 1.0,  scaling: 1.0,  startGold: 300, scoreMul: 1.0 },
+    hard:   { label: 'Hard',   enemyMul: 1.3,  scaling: 1.3,  startGold: 200, scoreMul: 1.5 },
   },
 
   // ---------------------------------------------------------------- WAVES
   waves: {
-    firstBuildBonus: 10,       // extra seconds before wave 1
     baseCount: 21,
     countPerWave: 7.8,
     hpLinear: 0.12,            // hp mul = (1 + hpLinear*e) * hpExp^e, e = (wave-1) * scaling
@@ -66,7 +65,6 @@ const CONFIG = {
     clearGoldPerWave: 8,
     clearXpBase: 40,
     clearXpPerWave: 14,
-    earlyGoldPerSec: 3,
     goldPerWaveScaling: 0.05,  // enemy gold bounty grows by this per wave
   },
 
@@ -167,8 +165,7 @@ const CONFIG = {
   allies: {
     soldier: { name: 'Soldier', shape: 'circle',  color: 0x4a8fe0, radius: 10, hp: 190, damage: 14, range: 22,  rate: 1.0, armor: 3, speed: 125, aggro: 230 },
     archer:  { name: 'Archer',  shape: 'diamond', color: 0x6fb6ff, radius: 9,  hp: 110, damage: 13, range: 210, rate: 0.9, armor: 1, speed: 125, aggro: 260, ranged: true, projSpeed: 600 },
-    leash: 380,          // auto mode: how far from their post allies will chase
-    commandLeash: 260,
+    leash: 380,          // how far from their post allies will chase
   },
 
   // ---------------------------------------------------------------- BUILDINGS
@@ -243,6 +240,7 @@ const CONFIG = {
       skillEvery: 0.1,       // s between skill checks
       retreatHp: 0.3,        // fall back to the Keep below this HP fraction...
       resumeHp: 0.65,        // ...and return to the fight above this one
+      buildWait: 5,          // s the bot spends in each build phase before starting the next wave
       warrior: {
         dashMinDist: 120,      // Dash toward the focus enemy when it is farther than this...
         dashCluster: 3,        // ...or through a cluster this big

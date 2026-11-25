@@ -28,7 +28,7 @@ class Ally extends Unit {
 
     const cmd = this.scene.allyCommand;
     const post = cmd.postFor(this);
-    const leash = cmd.mode === 'command' ? CONFIG.allies.commandLeash : CONFIG.allies.leash;
+    const leash = CONFIG.allies.leash;
 
     this.retargetT -= dt;
     if (this.retargetT <= 0 || !this.target || !this.target.alive) {

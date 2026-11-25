@@ -12,7 +12,7 @@ class SimBot {
     this.idle = this.strat.hero === 'idle';
     this.inOpening = this.strat.opening.length > 0;
     this.stepIdx = 0;
-    this.thinkT = 0; this.skillT = 0; this.spendT = 0;
+    this.thinkT = 0; this.skillT = 0; this.spendT = 0; this.buildT = 0;
     this.retreating = false;
     this.focus = null;
     this.laneRR = 0;
@@ -24,6 +24,8 @@ class SimBot {
   onKeepDamage(lane, dmg) { if (lane != null) this.leak[lane] += dmg; }
 
   update(dt) {
+    const wv = this.scene.waves;
+    if (wv.phase === 'build') { this.buildT += dt; if (this.buildT >= this.B.buildWait) { this.buildT = 0; wv.startWave(); } }
     this.spendT -= dt;
     if (this.spendT <= 0) { this.spendT = 0.5; this.spend(); }
     const h = this.hero;

@@ -151,8 +151,9 @@ const STATE_JS = `(() => {
             cooldowns: Object.fromEntries(Object.entries(h.cooldowns).map(([a, b]) => [a, r(b)])), aiming: h.aiming,
             order: h.order ? h.order.type || true : null, items: h.itemLevels },
     keep: { hp: r(k.hp), maxHp: k.maxHp, tier: k.tier },
-    difficulty: gs.diffKey, gold: gs.economy.gold, wave: w.wave, phase: w.phase,
-    enemies: gs.enemies.filter(e => e.alive).length, allies: gs.allies.filter(a => a.alive).length,
+    difficulty: gs.diffKey, gold: gs.economy.gold, wave: w.wave, nextWaveIn: r(w.timer),
+    enemies: gs.enemies.filter(e => e.alive && !e.neutral).length, neutrals: gs.enemies.filter(e => e.alive && e.neutral).length,
+    towers: gs.towers.filter(t => t.alive).map(t => ({ lane: t.lane, order: t.order, hp: r(t.hp) })), allies: gs.allies.filter(a => a.alive).length,
     buildings: gs.buildings.map(b => ({ type: b.type, level: b.level, tx: b.tx, ty: b.ty })),
     placing: gs.build.placing, selected: gs.build.selected ? (gs.build.selected === k ? 'keep' : gs.build.selected.type) : null,
     picks: gs.picks.choices, paused: gs.paused, ended: gs.ended, stats: { ...gs.stats, time: r(gs.stats.time) },
@@ -318,7 +319,7 @@ async function main() {
       case 'wmove': { const p = await worldToGame(c, +a[0], +a[1]); await mouse(c, 'mouseMoved', p.x, p.y); break; }
       case 'wclick': {
         const p = await worldToGame(c, +a[0], +a[1]);
-        if (p.x < 0 || p.y < 0 || p.x > VIEW_W || p.y > VIEW_H) die(`world point is off screen (game coords ${Math.round(p.x)},${Math.round(p.y)}); the camera follows the hero`);
+        if (p.x < 0 || p.y < 0 || p.x > VIEW_W || p.y > VIEW_H) die(`world point is off screen (game coords ${Math.round(p.x)},${Math.round(p.y)}); pan the camera there first (minimap click, or hold Space to centre on the hero)`);
         await click(c, p.x, p.y, a[2] || 'left');
         break;
       }

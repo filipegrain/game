@@ -3,7 +3,7 @@
 const FONT = 'Arial, Helvetica, sans-serif';
 const UI_DEPTH = { panel: 10, content: 20, window: 50, tooltip: 100 };
 const SKILL_KEYS = ['Q', 'W', 'E', 'R'];
-const BUILD_TYPES = ['arrow', 'cannon', 'frost', 'barracks', 'mine'];
+const BUILD_TYPES = ['arrow', 'cannon', 'frost', 'mine'];
 const PCT = (v) => Math.round(v * 100) + '%';
 const STAT_FMT = {
   damage: v => '+' + +v.toFixed(2) + ' damage', hp: v => '+' + v + ' HP', armor: v => '+' + v + ' armor', speed: v => '+' + v + ' move speed',
@@ -45,8 +45,7 @@ class UIScene extends Phaser.Scene {
 
     const on = (name, fn) => { this.gs.events.on(name, fn, this); this.listeners.push([name, fn]); };
     on('notice', (msg) => this.notice(msg));
-    on('waveStart', (n, plan) => this.banner('WAVE ' + n, plan.bosses ? 'BOSS WAVE — ' + plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · ') : plan.lanes.map(l => CONFIG.map.lanes[l].name).join(' · '), plan.bosses ? '#ff5050' : '#ffffff'));
-    on('waveCleared', (n, gold) => this.banner('WAVE ' + n + ' CLEARED', '+' + gold + ' gold', '#7cf29a'));
+    on('waveStart', (n, plan) => this.banner('WAVE ' + n, (plan.bosses ? 'BOSS WAVE — ' : '') + plan.count + ' enemies on all lanes', plan.bosses ? '#ff5050' : '#ffffff'));
     on('levelUp', (lv, unlocked) => {
       if (unlocked && unlocked.length) this.notice(unlocked.join('\n'), 3000);   // the pick panel is the level-up banner
       Feel.popScale(this.portraitLevel, 1.6, 150);
@@ -132,10 +131,6 @@ class UIScene extends Phaser.Scene {
     this.waveText = this.text(130, 16, 'Wave 0', 14, '#ffffff', { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.phaseText = this.text(230, 16, '', 12, '#cbd5e1').setOrigin(0, 0.5);
     this.nextText = this.text(450, 16, '', 12, '#ff8a8a').setOrigin(0, 0.5);
-    this.startBtn = this.button(640, 4, 180, 24, 'Start Next Wave (N)', () => this.gs.waves.startWave(), {
-      color: 0x7a2a2a, hover: 0x9a3a3a, stroke: 0xff6060, size: 12,
-      tip: () => 'Start the next wave (N).',
-    });
     this.text(845, 16, 'KEEP', 11, '#9ca3af', { fontStyle: 'bold' }).setOrigin(0, 0.5);
     this.keepBarG = this.add.graphics().setDepth(UI_DEPTH.content);
     this.keepHpText = this.text(990, 16, '', 10, '#ffffff', { fontStyle: 'bold' }).setOrigin(0.5);
@@ -232,17 +227,18 @@ class UIScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ minimap
   createMinimap() {
-    const X = 8, W = 176, H = 82, Y = PANEL_BOTTOM - H - 4;
+    const X = 8, W = 176, H = Math.round(W * CONFIG.MAP_H / CONFIG.MAP_W), Y = PANEL_BOTTOM - H - 4;
     this.mm = { X, Y, W, H, s: W / CONFIG.WORLD_W };
     this.region(X - 4, Y - 4, W + 8, H + 8);
     const bg = this.add.graphics().setDepth(UI_DEPTH.panel);
     bg.fillStyle(0x0f131a, 0.95); bg.fillRect(X - 4, Y - 4, W + 8, H + 8);
-    bg.fillStyle(0x223a21, 1); bg.fillRect(X, Y, W, H);
+    bg.fillStyle(0x2d7f4e, 1); bg.fillRect(X, Y, W, H);
     const p = this.gs.pathing, s = this.mm.s, T = CONFIG.TILE;
+    const MM = { [TILE_T.DIRT]: 0x8b5842, [TILE_T.BRIDGE]: 0xb07e56, [TILE_T.WATER]: 0x4fa9b5, [TILE_T.ROCK]: 0x5f6770, [TILE_T.TREE]: 0x7fae3a, [TILE_T.KEEP]: 0x9ca3af };
     for (let y = 0; y < CONFIG.MAP_H; y++) for (let x = 0; x < CONFIG.MAP_W; x++) {
       const t = p.tileType(x, y);
-      if (t === TILE_T.TERRAIN) continue;
-      bg.fillStyle(t === TILE_T.KEEP ? 0x9ca3af : t === TILE_T.CONNECTOR ? 0xa8976f : 0x8d7b58, 1);
+      if (t === TILE_T.GRASS) continue;
+      bg.fillStyle(MM[t], 1);
       bg.fillRect(X + x * T * s, Y + y * T * s, T * s + 0.5, T * s + 0.5);
     }
     bg.lineStyle(2, 0x3a4252, 1); bg.strokeRect(X - 4, Y - 4, W + 8, H + 8);
@@ -258,9 +254,9 @@ class UIScene extends Phaser.Scene {
           if (dest) Feel.clickRing(dest.x, dest.y, 0x44ff66);
           this.gs.ping(dest.x, dest.y, 0x44ff66);
         }
-      } else if (ptr.leftButtonDown() && this.gs.spaceHeld) { this.mmDrag = true; this.gs.jumpCameraTo(w.x, w.y); }
+      } else if (ptr.leftButtonDown()) { this.mmDrag = true; this.gs.jumpCameraTo(w.x, w.y); }
     });
-    zone.on('pointermove', (ptr) => { if (this.mmDrag && ptr.leftButtonDown() && this.gs.spaceHeld) { const w = toWorld(ptr); this.gs.jumpCameraTo(w.x, w.y); } });
+    zone.on('pointermove', (ptr) => { if (this.mmDrag && ptr.leftButtonDown()) { const w = toWorld(ptr); this.gs.jumpCameraTo(w.x, w.y); } });
     this.input.on('pointerup', () => { this.mmDrag = false; });
   }
 
@@ -268,14 +264,15 @@ class UIScene extends Phaser.Scene {
     const g = this.mmG, { X, Y, W, H, s } = this.mm, gs = this.gs;
     g.clear();
     for (const b of gs.buildings) {
-      g.fillStyle(b.type === 'mine' ? 0xffd23f : b.type === 'barracks' ? 0x4a8fe0 : 0xffffff, 1);
+      g.fillStyle(b.type === 'mine' ? 0xffd23f : 0xffffff, 1);
       const bs = Math.max(2, CONFIG.px(b.fp) * s);
       g.fillRect(X + b.tx * CONFIG.TILE * s - 0.5, Y + b.ty * CONFIG.TILE * s - 0.5, bs, bs);
     }
+    for (const t of gs.towers) if (t.alive) { g.fillStyle(0x1e3a8a, 1); g.fillRect(X + t.x * s - 3, Y + t.y * s - 3, 6, 6); g.lineStyle(1, 0x93c5fd, 1); g.strokeRect(X + t.x * s - 3, Y + t.y * s - 3, 6, 6); }
     g.fillStyle(0x60a5fa, 1);
     for (const a of gs.allies) g.fillRect(X + a.x * s - 1, Y + a.y * s - 1, 2.5, 2.5);
     for (const e of gs.enemies) {
-      g.fillStyle(e.isBoss ? 0xff0000 : 0xff5050, 1);
+      g.fillStyle(e.isBoss ? 0xff0000 : e.neutral ? 0x9fe9ff : 0xff5050, 1);
       const r = e.isBoss ? 3 : 1.5;
       g.fillRect(X + e.x * s - r, Y + e.y * s - r, r * 2, r * 2);
     }
@@ -283,7 +280,7 @@ class UIScene extends Phaser.Scene {
     if (h.alive) { g.fillStyle(0xffffff, 1); g.fillCircle(X + h.x * s, Y + h.y * s, 3.5); g.fillStyle(h.color, 1); g.fillCircle(X + h.x * s, Y + h.y * s, 2.2); }
     // next/active lanes
     const blink = (Math.sin(this.time.now / 180) + 1) / 2;
-    for (const l of gs.waves.nextLanes || []) {
+    for (const l of this.activeSpawns()) {
       const sp = gs.waves.spawnPoint(l);
       g.lineStyle(2, 0xff3030, 0.4 + blink * 0.6); g.strokeCircle(X + sp.x * s, Y + sp.y * s, 5);
     }
@@ -301,7 +298,7 @@ class UIScene extends Phaser.Scene {
     const X = 1206, W = 68;
     this.region(X - 2, 48, W + 4, 132);
     this.colBtns = {
-      build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-5 place buildings' }),
+      build: this.button(X, 50, W, 56, 'BUILD\n(V)', () => this.toggleBuildPanel(), { size: 12, tip: () => 'Build panel (V)\nHotkeys 1-4 place buildings' }),
       keep: this.button(X, 110, W, 66, 'KEEP\n(U)', () => this.gs.upgradeKeep(), { size: 12, color: 0x4a3a10, hover: 0x6a5418, stroke: 0xffd23f, tip: () => this.keepTip() }),
     };
   }
@@ -310,11 +307,11 @@ class UIScene extends Phaser.Scene {
     const k = this.gs.keep, n = k.nextTierDef;
     if (!n) return 'Keep tier ' + k.tier + ' (max)';
     const perks = {
-      2: '+HP, Keep shoots arrows, 6 allies,\nunlocks Cannon + Barracks',
-      3: '+HP, spawns Archers, 8 allies,\nunlocks Frost Tower + Gold Mine',
-      4: '+HP, stronger Keep attack, 10 allies,\nbuilding level 3, Keep auto-repair',
+      2: '+HP, Keep shoots arrows,\nunlocks Cannon',
+      3: '+HP, 2 archers per creep wave,\nunlocks Frost Tower + Gold Mine',
+      4: '+HP, stronger Keep attack, building level 3,\nrepairs nearby structures',
     }[k.tier + 1];
-    return 'Upgrade Keep to tier ' + (k.tier + 1) + ' (U) — ' + n.cost + 'g\n' + perks + '\nBuild area grows.';
+    return 'Upgrade Keep to tier ' + (k.tier + 1) + ' (U) — ' + n.cost + 'g\n' + perks + '\nLane towers and creeps +' + Math.round(CONFIG.keep.tierScaling * 100) + '% HP and damage.';
   }
 
   createBuildPanel() {
@@ -353,8 +350,7 @@ class UIScene extends Phaser.Scene {
       if (!vis) return;
       const cx = X + W / 2, cy = b.y + 22;
       const a = unlocked ? 1 : 0.35;
-      if (type === 'barracks') { g.fillStyle(def.color, a); g.fillRect(cx - 14, cy - 9, 28, 18); }
-      else if (type === 'mine') { g.fillStyle(def.color, a); g.fillRect(cx - 11, cy - 11, 22, 22); }
+      if (type === 'mine') { g.fillStyle(def.color, a); g.fillRect(cx - 11, cy - 11, 22, 22); }
       else { g.fillStyle(def.color, a); g.fillRect(cx - 12, cy - 12, 24, 24); g.fillStyle(def.core, a); g.fillCircle(cx, cy, 6); }
     });
   }
@@ -403,8 +399,8 @@ class UIScene extends Phaser.Scene {
     if (s === this.gs.keep) {
       const n = s.nextTierDef;
       this.setText(this.selTitle, 'selT', 'Keep — Tier ' + s.tier);
-      this.setText(this.selInfo, 'selI', 'HP ' + Math.ceil(s.hp) + ' / ' + s.maxHp + '   Allies ' + this.gs.allies.length + ' / ' + s.maxAllies() +
-        '\nRadius ' + s.buildRadius + (s.tierDef.attack ? '   Arrows ' + s.tierDef.attack.damage : ''));
+      this.setText(this.selInfo, 'selI', 'HP ' + Math.ceil(s.hp) + ' / ' + s.maxHp + '   Creeps ' + this.gs.allies.length +
+        '\nTowers/creeps +' + Math.round(CONFIG.keep.tierScaling * 100 * (s.tier - 1)) + '%' + (s.tierDef.attack ? '   Arrows ' + s.tierDef.attack.damage : ''));
       this.setText(this.selUp.txt, 'selU', n ? 'Upgrade ' + n.cost + 'g' : 'Max tier');
       this.selUp.bg.setFillStyle(n && this.gs.economy.canAfford(n.cost) ? 0x24563a : 0x2a3140);
       return;
@@ -413,9 +409,8 @@ class UIScene extends Phaser.Scene {
     this.setText(this.selTitle, 'selT', d.name + '  Lv ' + s.level);
     let info = '';
     if (d.range) info += 'DMG ' + Math.round(s.damage) + '  Range ' + s.range + '  Rate ' + s.rate.toFixed(1) + '/s';
-    if (s.type === 'barracks') info += '+' + d.allyCap[s.level - 1] + ' ally cap, spawns ×' + d.spawnMul[s.level - 1];
     if (s.type === 'mine') info += '+' + d.income[s.level - 1] + ' gold per wave';
-    info += '\nCannot be damaged';
+    info += '\nHP ' + Math.ceil(s.hp) + ' / ' + s.maxHp;
     this.setText(this.selInfo, 'selI', info);
     const uc = s.upgradeCost();
     this.setText(this.selUp.txt, 'selU', uc == null ? 'Max' : (!s.canUpgradeTier() ? 'Need T4' : 'Up ' + uc + 'g'));
@@ -522,10 +517,11 @@ class UIScene extends Phaser.Scene {
       'Right-click: move / attack (hold to follow cursor)      A + left-click: attack-move      S: stop',
       'Q W E R: aim a skill, then left-click to cast (right-click / Esc cancels). Warrior: Q/W/E passive, R dashes.',
       'Self-cast skills fire on key press. Mage Fire Bolt autocasts at your attack target (Q toggles).',
-      'V: build panel   1-5: place building   Right-click / Esc: cancel',
-      'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep   Buildings cannot be damaged',
-      'Level up: pick 1 of 3 items (game pauses)   N: start the next wave',
-      'Camera follows the hero. Hold Space to look around (screen edges, middle-drag, minimap)',
+      'V: build panel   1-4: place building on grass or dirt (enemies attack what blocks them)   Right-click / Esc: cancel',
+      'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep (powers up lane towers and creeps)',
+      "A wave hits every lane each minute. Creeps march from each lane's first tower while it stands.",
+      'Level up: pick 1 of 3 items (game pauses)   Neutral camps: attack them for gold and XP',
+      'Camera: screen edges, middle-drag or minimap. Hold Space to follow the hero',
       'P / Esc: pause   M: mute',
     ].join('\n'), { fontFamily: FONT, fontSize: '15px', color: '#e5e7eb', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
     const resume = this.button(560, 540, 160, 40, 'Resume', () => this.gs.togglePause(false), { size: 16, depth: UI_DEPTH.window + 21 });
@@ -590,17 +586,8 @@ class UIScene extends Phaser.Scene {
     // top bar
     this.setText(this.goldText, 'gold', String(gs.economy.gold));
     this.setText(this.waveText, 'wave', 'Wave ' + wv.wave);
-    if (wv.phase === 'build') {
-      this.setText(this.phaseText, 'phase', 'Build phase');
-      this.setText(this.nextText, 'next', 'Next: ' + wv.next.lanes.map(l => CONFIG.map.lanes[l].name).join(' · ') + (wv.next.bosses ? '  (BOSS)' : ''));
-      this.startBtn.setVisible(true);
-      this.setText(this.startBtn.txt, 'startT', 'Start Wave ' + wv.next.n + ' (N)');
-    } else {
-      const left = gs.enemies.length + (wv.toSpawn - wv.spawned);
-      this.setText(this.phaseText, 'phase', 'Enemies left: ' + left);
-      this.setText(this.nextText, 'next', 'Lanes: ' + (wv.curLanes || []).map(l => CONFIG.map.lanes[l].name).join(' · '));
-      this.startBtn.setVisible(false);
-    }
+    this.setText(this.phaseText, 'phase', 'Enemies: ' + wv.hostileCount + '   Time ' + this.clock(gs.stats.time));
+    this.setText(this.nextText, 'next', 'Wave ' + wv.next.n + ' in ' + this.clock(Math.max(0, Math.ceil(wv.timer))) + ' (' + wv.next.count + (wv.next.bosses ? ', BOSS' : '') + ')');
     const k = gs.keep;
     const kb = this.keepBarG;
     kb.clear();
@@ -750,21 +737,29 @@ class UIScene extends Phaser.Scene {
     icons[heroKey][k]();
   }
 
+  clock(s) { s = Math.floor(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+
+  // Spawns to flag: all of them just before a wave tick, then each while it is still spawning.
+  activeSpawns() {
+    const wv = this.gs.waves;
+    return CONFIG.map.spawns.map((s, i) => i).filter(i => wv.timer < 8 || wv.queues[i].items.length > 0);
+  }
+
   drawEdgeIndicators() {
     const g = this.edgeG, gs = this.gs, cam = gs.cameras.main;
     g.clear();
     this.edgeLabels.forEach(t => t.setVisible(false));
-    const lanes = gs.waves.nextLanes || [];
+    const lanes = this.activeSpawns();
     const blink = 0.55 + 0.45 * Math.sin(this.time.now / 160);
     lanes.forEach((l, i) => {
       const sp = gs.waves.spawnPoint(l);
       const sx = sp.x - cam.scrollX, sy = sp.y - cam.scrollY;
       const label = this.edgeLabels[i];
-      const name = CONFIG.map.lanes[l].name;
+      const name = CONFIG.map.spawns[l].name;
       const minX = 30, maxX = 1250, minY = 70, maxY = 624;
       if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
         g.lineStyle(3, 0xff3030, blink); g.strokeCircle(sx, sy, 48);
-        label.setPosition(sx, sy - 60).setText((gs.waves.phase === 'build' ? 'NEXT: ' : '') + name).setVisible(true);
+        label.setPosition(sx, sy - 60).setText((gs.waves.timer < 8 ? 'NEXT: ' : '') + name).setVisible(true);
         return;
       }
       const cx = 640, cy = 325;

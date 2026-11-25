@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Exhaustive check of the lane-reachability promise on the REAL game code (no hand model).
-// Loads src/config.js, src/systems/Pathing.js, src/entities/{Building,Keep}.js and src/systems/BuildSystem.js
+// Exhaustive check of the reachability promises on the REAL game code (no hand model).
+// Loads src/config.js, src/systems/Pathing.js, src/entities/{Building,Tower,Keep}.js and src/systems/BuildSystem.js
 // into a Node vm the way index.html's <script> tags would, with rendering/sound stubbed out.
 //
-//   node check.mjs              run the three properties against the working tree
+//   node check.mjs              run the properties against the working tree
 //   node check.mjs --self-test  also run each mutant and require that the check FAILS on it
 //
 // Exit code 0 = all properties hold (and, with --self-test, every mutant was caught).
@@ -14,15 +14,15 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-const FILES = ['src/config.js', 'src/systems/Pathing.js', 'src/entities/Building.js', 'src/entities/Keep.js', 'src/systems/BuildSystem.js'];
+const FILES = ['src/config.js', 'src/systems/Pathing.js', 'src/entities/Building.js', 'src/entities/Tower.js', 'src/entities/Keep.js', 'src/systems/BuildSystem.js'];
 
 // Broken variants used to prove the check can fail. Each is a literal text edit on one real source file.
 const MUTANTS = {
-  'build-allows-lane-tiles': { file: 'src/systems/BuildSystem.js', find: "if (blocked) return { ok: false, reason: 'Buildings go next to lanes, not on them' };", replace: '', expect: 'P3' },
-  'building-footprint-bigger-than-checked': { file: 'src/entities/Building.js', find: 'const fp = CONFIG.buildings.footprint;', replace: 'const fp = CONFIG.buildings.footprint + 1;', expect: 'P3' },
-  'plaza-detached-from-lanes': { file: 'src/config.js', find: '{ x: 7, y: 6, w: 21, h: 33 }', replace: '{ x: 7, y: 6, w: 20, h: 33 }', expect: 'P1' },
-  'spawn-past-the-map-edge': { file: 'src/config.js', find: "spawn: { x: 94.5, y: 22.5 }", replace: "spawn: { x: 96.5, y: 22.5 }", expect: 'P2' },
-  'diagonal-corner-cut-loop': { file: 'src/systems/Pathing.js', find: 'if (nd < dist[ni]) { dist[ni] = nd; heap.push(ni, nd); }', replace: 'if (nd < dist[ni] && !(nx === 60 && ny === 8)) { dist[ni] = nd; heap.push(ni, nd); }', expect: 'P1' },
+  'build-allows-trees-and-rocks': { file: 'src/systems/BuildSystem.js', find: 'else if (!p.isBuildable(x, y)) terrain = true;', replace: '', expect: 'P3' },
+  'route-rule-skipped': { file: 'src/systems/BuildSystem.js', find: 'if (this.scene.pathing.wouldDisconnect(tx, ty, CONFIG.buildings.footprint))', replace: 'if (false)', expect: 'P4' },
+  'spawn-inside-rock': { file: 'src/config.js', find: "{ name: 'MID', x: 114.5, y: 32 }", replace: "{ name: 'MID', x: 119.5, y: 67 }", expect: 'P1' },
+  'flow-field-hole': { file: 'src/systems/Pathing.js', find: 'if (nd < field[ni]) { field[ni] = nd; heap.push(ni, nd); }', replace: 'if (nd < field[ni] && !(nx === 60 && ny === 60)) { field[ni] = nd; heap.push(ni, nd); }', expect: 'P1' },
+  'bridge-waypoint-skipped': { file: 'src/systems/Pathing.js', find: 'if (unit.viaBridge) {', replace: 'if (false) {', expect: 'P2' },
 };
 
 function load(mutant) {
@@ -37,118 +37,144 @@ function load(mutant) {
     }
     vm.runInContext(src, ctx, { filename: f });
   }
-  return vm.runInContext('({ CONFIG, TILE_T, Pathing, Building, Keep, BuildSystem })', ctx);
+  return vm.runInContext('({ CONFIG, TILE_T, Pathing, Building, Tower, Keep, BuildSystem })', ctx);
 }
 
 function run(mutant) {
-  const { CONFIG, TILE_T, Pathing, Building, Keep, BuildSystem } = load(mutant);
-  const scene = { buildings: [] };
+  const { CONFIG, TILE_T, Pathing, Tower, Keep, BuildSystem } = load(mutant);
+  const scene = { buildings: [], towers: [] };
   const chain = new Proxy(function () {}, { get: () => chain, apply: () => chain });
   scene.add = chain;
-  scene.economy = { canAfford: () => true };        // gold never limits the domain: every placement check() allows except for cost
+  scene.economy = { canAfford: () => true };        // gold never limits the domain
   scene.pathing = new Pathing(scene);
   scene.keep = new Keep(scene);
+  CONFIG.map.towers.forEach((lane, li) => lane.forEach((def, i) => scene.towers.push(new Tower(scene, li, i, def))));
   const build = new BuildSystem(scene);
-  const p = scene.pathing, W = p.W, H = p.H;
+  const p = scene.pathing, W = p.W, H = p.H, T = CONFIG.TILE, m = CONFIG.map;
   const fails = [];
   const fail = (prop, msg) => { if (fails.filter(f => f.prop === prop).length < 5) fails.push({ prop, msg }); else if (!fails.some(f => f.prop === prop && f.more)) fails.push({ prop, more: true, msg: '(more counterexamples omitted)' }); };
-  const lane = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (p.isLane(x, y)) lane.push([x, y]);
-  const base = Float32Array.from(p.dist);
 
-  // P1: from every lane tile, following the enemy flow field (Pathing.flowNext) reaches the Keep.
-  for (const [x, y] of lane) {
-    const d0 = p.dist[p.idx(x, y)];
-    if (!Number.isFinite(d0)) { fail('P1', `lane tile (${x},${y}) has no route to the Keep (flow distance Infinity)`); continue; }
+  // P1: every spawn, tower and camp sits on walkable ground with a route to the Keep, and from every tile with a
+  // route, following the enemy flow field (Pathing.flowNext) strictly descends to a goal tile next to the Keep.
+  const marks = [...m.spawns.map(s => ['spawn ' + s.name, s]), ...m.towers.flat().map((t, i) => ['tower ' + i, t]), ...m.camps.map((c, i) => ['camp ' + i, c])];
+  for (const [name, s] of marks) {
+    const tx = Math.floor(s.x), ty = Math.floor(s.y);
+    if (!p.isWalkable(tx, ty)) fail('P1', `${name} at tile (${tx},${ty}) is not walkable`);
+    else if (!Number.isFinite(p.dist[p.idx(tx, ty)])) fail('P1', `${name} at tile (${tx},${ty}) has no route to the Keep`);
+  }
+  // every tile 4-connected to the Keep must have a route (no holes in the field)
+  const seen = new Uint8Array(W * H), queue = [...p.keepGoals];
+  queue.forEach(i => { seen[i] = 1; });
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q], x = i % W, y = (i / W) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!p.isWalkable(nx, ny) || seen[p.idx(nx, ny)]) continue;
+      seen[p.idx(nx, ny)] = 1; queue.push(p.idx(nx, ny));
+      if (!Number.isFinite(p.dist[p.idx(nx, ny)])) fail('P1', `tile (${nx},${ny}) is connected to the Keep but has no flow route`);
+    }
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!p.isWalkable(x, y) || !Number.isFinite(p.dist[p.idx(x, y)])) continue;
     let cx = x, cy = y, steps = 0;
     for (;;) {
-      const nx = p.flowNext(cx * 32 + 16, cy * 32 + 16);
-      if (!nx) break;                                          // at a goal tile next to the Keep
+      const nx = p.flowNext(cx * T + 16, cy * T + 16);
+      if (!nx) break;
       const before = p.dist[p.idx(cx, cy)], after = p.dist[p.idx(nx.tx, nx.ty)];
-      if (!(after < before)) { fail('P1', `enemy at lane tile (${x},${y}) gets stuck at (${cx},${cy}): next tile (${nx.tx},${nx.ty}) is not closer (${before} -> ${after})`); break; }
+      if (!(after < before)) { fail('P1', `enemy at (${x},${y}) gets stuck at (${cx},${cy}): next (${nx.tx},${nx.ty}) is not closer (${before} -> ${after})`); break; }
       cx = nx.tx; cy = nx.ty;
       if (++steps > W * H) { fail('P1', `enemy at (${x},${y}) loops forever`); break; }
     }
   }
 
-  // P2: every tile WaveManager.update can spawn an enemy on is a lane tile with a route.
-  // Spawn position (WaveManager.js update): x = spawn.x*T + [0,20), y = clamp(spawn.y*T ± (h-1)*T/2, laneDef.y*T+14, (laneDef.y+laneDef.h)*T-14).
-  const T = CONFIG.TILE;
-  CONFIG.map.lanes.forEach((L, li) => {
-    const laneDef = CONFIG.map.paths[li === 0 ? 0 : li === 1 ? 1 : 2];
-    const sx = L.spawn.x * T, sy = L.spawn.y * T, half = (laneDef.h - 1) * T / 2;
-    const clamp = (v) => Math.max(laneDef.y * T + 14, Math.min((laneDef.y + laneDef.h) * T - 14, v));
-    const y0 = clamp(sy - half), y1 = clamp(sy + half);
-    for (let ty = Math.floor(y0 / T); ty <= Math.floor(y1 / T); ty++)
-      for (let tx = Math.floor(sx / T); tx <= Math.floor((sx + 20) / T); tx++) {
-        if (!p.isLane(tx, ty)) fail('P2', `${L.name} spawn can place an enemy on non-lane tile (${tx},${ty})`);
-        else if (!Number.isFinite(p.dist[p.idx(tx, ty)])) fail('P2', `${L.name} spawn tile (${tx},${ty}) has no route to the Keep`);
-      }
+  // P2: lane routes. An enemy from spawn i (Pathing.laneNext via the lane's bridge) reaches the Keep and passes
+  // every tower of lane i; a creep from lane i's first tower reaches spawn i the same way in reverse.
+  const walk = (x, y, lane, field) => {
+    const u = { x, y, lane, viaBridge: true }, near = new Set();
+    for (let steps = 0; steps < W * H; steps++) {
+      for (const t of scene.towers) if (t.lane === lane && Math.hypot(t.x - u.x, t.y - u.y) < 200) near.add(t.order);
+      const n = p.laneNext(u, field);
+      if (!n) return { done: field[p.idx(p.tileOf(u.x), p.tileOf(u.y))] <= 3 || field[p.idx(p.tileOf(u.x), p.tileOf(u.y))] === 0, near };
+      u.x = n.tx * T + 16; u.y = n.ty * T + 16;
+      if (field === p.spawnDist[lane] && field[p.idx(n.tx, n.ty)] <= 3) return { done: true, near };
+    }
+    return { done: false, near };
+  };
+  m.spawns.forEach((s, lane) => {
+    const n = m.towers[lane].length;
+    const e = walk(s.x * T, s.y * T, lane, p.dist);
+    if (!e.done) fail('P2', `enemies from ${s.name} never reach the Keep`);
+    else if (e.near.size !== n) fail('P2', `enemies from ${s.name} pass only ${e.near.size}/${n} of their lane's towers`);
+    const t0 = scene.towers.find(t => t.lane === lane && t.order === 0);
+    const c = walk(t0.x, t0.y, lane, p.spawnDist[lane]);
+    if (!c.done) fail('P2', `creeps of lane ${s.name} never reach their spawn`);
+    else if (c.near.size !== n) fail('P2', `creeps of lane ${s.name} pass only ${c.near.size}/${n} of their lane's towers`);
   });
 
-  // P3: no placement the build check allows, at any Keep tier, for any building type, changes the enemy flow field
-  // or makes a lane tile unwalkable. check() only adds rejections as buildings accumulate (occupied), and a building
-  // only affects pathing through the tiles it occupies, so single placements on the empty map cover every build order.
-  const types = Object.keys(CONFIG.buildings).filter(k => CONFIG.buildings[k] && typeof CONFIG.buildings[k] === 'object' && 'cost' in CONFIG.buildings[k]);
-  const fpMax = CONFIG.buildings.footprint + 2;
-  let legal = 0;
-  const changed = new Map();   // occupied-tile set -> first flow-field difference, or null
-  for (let tier = 1; tier <= CONFIG.keep.tiers.length; tier++) {
-    scene.keep.tier = tier;
-    for (const type of types) {
-      for (let ty = -fpMax; ty < H + fpMax; ty++) for (let tx = -fpMax; tx < W + fpMax; tx++) {
-        if (!build.check(type, tx, ty).ok) continue;
-        legal++;
-        const b = new Building(scene, type, tx, ty);
-        p.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => {
-          if (p.isLane(x, y)) fail('P3', `tier ${tier} ${type} at (${tx},${ty}) occupies lane tile (${x},${y})`);
-        });
-        // the flow field reads buildings only through the set of occupied tiles, so equal sets give equal fields
-        const key = [];
-        p.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => key.push(x + ',' + y));
-        const k = key.join(' ');
-        if (!changed.has(k)) {
-          p.occupyBuilding(b);
-          p.computeFlowField();
-          let diff = null;
-          for (let i = 0; i < base.length; i++) if (p.dist[i] !== base[i]) { diff = `tile (${i % W},${(i / W) | 0}): ${base[i]} -> ${p.dist[i]}`; break; }
-          changed.set(k, diff);
-          p.freeBuilding(b);
-        }
-        if (changed.get(k)) fail('P3', `tier ${tier} ${type} at (${tx},${ty}) changes the enemy route at ${changed.get(k)}`);
-      }
-    }
+  // P3: at max Keep tier, for every building type and tile, BuildSystem.checkPlace accepts only grass/dirt
+  // footprints, and an accepted footprint leaves every spawn with a route to the Keep.
+  while (scene.keep.nextTierDef) scene.keep.upgrade();
+  const fp = CONFIG.buildings.footprint;
+  const types = Object.keys(CONFIG.buildings).filter(k => CONFIG.buildings[k] && CONFIG.buildings[k].cost);
+  let accepted = 0;
+  for (let ty = -fp; ty < H + fp; ty++) for (let tx = -fp; tx < W + fp; tx++) {
+    const ok = types.filter(t => build.checkPlace(t, tx, ty).ok);
+    if (!ok.length) continue;
+    accepted++;
+    let terrain = true;
+    p.forEachFootprint(tx, ty, fp, (x, y) => { if (!p.isBuildable(x, y)) terrain = false; });
+    if (!terrain) { fail('P3', `${ok[0]} accepted at (${tx},${ty}) on rock, trees, water or a bridge`); continue; }
+    const idx = [];
+    p.forEachFootprint(tx, ty, fp, (x, y) => { idx.push(p.idx(x, y)); p.building[p.idx(x, y)] = true; });
+    p.fillField(p.dist, p.keepGoals);
+    for (const [i, si] of p.spawnTiles.entries()) if (!Number.isFinite(p.dist[si])) fail('P3', `${ok[0]} accepted at (${tx},${ty}) cuts ${m.spawns[i].name} off from the Keep`);
+    for (const i of idx) p.building[i] = null;
   }
   p.computeFlowField();
-  if (legal === 0) fail('P3', 'vacuous: the build check allowed no placement at all, so P3 proved nothing');
-  return { fails, laneTiles: lane.length, legalPlacements: legal, tiers: CONFIG.keep.tiers.length, types };
+
+  // P4: an adversarial builder that keeps placing on the current enemy route (BuildSystem.checkPlace, then
+  // Pathing.occupyBuilding as the game does) never walls a spawn off from the Keep, however many buildings pile up.
+  let placed = 0;
+  for (let round = 0; round < 400; round++) {
+    let spot = null;
+    for (const [lane, s] of m.spawns.entries()) {
+      let x = s.x * T, y = s.y * T;
+      for (let steps = 0; steps < W * H && !spot; steps++) {
+        const n = p.flowNext(x, y);
+        if (!n) break;
+        for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) if (!spot && build.checkPlace('arrow', n.tx + ox, n.ty + oy).ok) spot = { tx: n.tx + ox, ty: n.ty + oy };
+        x = n.tx * T + 16; y = n.ty * T + 16;
+      }
+      if (spot) break;
+    }
+    if (!spot) break;                                  // nothing on any route can be built on any more
+    const b = { tx: spot.tx, ty: spot.ty, fp };
+    scene.buildings.push(b); p.occupyBuilding(b); placed++;
+    const cut = p.spawnTiles.findIndex(si => !Number.isFinite(p.dist[si]));
+    if (cut >= 0) { fail('P4', `after ${placed} buildings on the route, the one at (${spot.tx},${spot.ty}) cuts ${m.spawns[cut].name} off from the Keep`); break; }
+  }
+  return { fails, stats: { routeBuildings: placed, walkableTiles: p.tiles.filter((t, i) => p.isGround(i % W, (i / W) | 0)).length, acceptedPlacements: accepted } };
 }
 
-function report(r) {
-  for (const prop of ['P1', 'P2', 'P3']) {
-    const f = r.fails.filter(x => x.prop === prop);
-    console.log(`${f.length ? 'FAIL' : 'ok  '} ${prop}`);
-    for (const x of f) console.log('       ' + x.msg);
+const report = (name, r) => {
+  const props = ['P1', 'P2', 'P3', 'P4'];
+  console.log(`${name}: ${JSON.stringify(r.stats)}`);
+  for (const pr of props) {
+    const fs_ = r.fails.filter(f => f.prop === pr);
+    console.log(`  ${pr} ${fs_.length ? 'FAIL' : 'ok'}`);
+    for (const f of fs_) console.log(`     - ${f.msg}`);
   }
-}
+};
 
-const selfTest = process.argv.includes('--self-test');
-const r = run(null);
-console.log(`lane-reachability @ ${REPO}`);
-console.log(`domain: ${r.laneTiles} lane tiles, ${r.tiers} Keep tiers x ${r.types.length} building types (${r.types.join(', ')}), ${r.legalPlacements} legal placements`);
-console.log('P1 every lane tile reaches the Keep by following the flow field');
-console.log('P2 every tile an enemy can spawn on is a lane tile with a route');
-console.log('P3 no legal building placement changes the enemy route');
-report(r);
-let ok = r.fails.length === 0;
-if (selfTest) {
-  console.log('\nself-test (each mutant must make its property FAIL):');
-  for (const [name, m] of Object.entries(MUTANTS)) {
-    let caught, detail;
-    try { const mr = run(m); caught = mr.fails.some(f => f.prop === m.expect); detail = (mr.fails.find(f => f.prop === m.expect) || {}).msg; }
-    catch (e) { caught = false; detail = 'error: ' + e.message; }
-    console.log(`${caught ? 'caught' : 'MISSED'} ${name} -> ${m.expect}${detail ? ': ' + detail : ''}`);
-    if (!caught) ok = false;
+const base = run(null);
+report('working tree', base);
+let exit = base.fails.length ? 1 : 0;
+if (process.argv.includes('--self-test')) {
+  for (const [name, mu] of Object.entries(MUTANTS)) {
+    const r = run(mu);
+    const caught = r.fails.some(f => f.prop === mu.expect);
+    console.log(`mutant ${name}: ${caught ? 'caught by ' + mu.expect : 'NOT CAUGHT (expected ' + mu.expect + ')'}`);
+    if (!caught) exit = 1;
   }
 }
-process.exit(ok ? 0 : 1);
+process.exit(exit);

@@ -22,10 +22,11 @@ class GameScene extends Phaser.Scene {
     this.enemies = [];
     this.allies = [];
     this.buildings = [];
+    this.towers = [];
     this.projectiles = [];
     this.stats = { kills: 0, time: 0, wavesCleared: 0 };
     this.cursorMode = null;      // null | 'attack'
-    this.spaceHeld = false;      // hold Space to look around (camera is otherwise locked on the hero)
+    this.spaceHeld = false;      // hold Space to follow the hero (the camera is otherwise free)
     this.rightHeld = false;
     this.followT = 0;
     this.pointerInside = false;
@@ -35,12 +36,12 @@ class GameScene extends Phaser.Scene {
     else this.drawMap();
 
     this.keep = new Keep(this);
-    this.hero = new Hero(this, this.heroKey, this.keep.rx + this.keep.rw + 60, this.keep.y);
+    CONFIG.map.towers.forEach((lane, li) => lane.forEach((def, i) => this.towers.push(new Tower(this, li, i, def))));
+    this.hero = new Hero(this, this.heroKey, this.keep.front.x, this.keep.front.y);
     this.economy = new Economy(this, this.diff.startGold);
     this.leveling = new Leveling(this, this.hero);
     this.picks = new ItemPicks(this, this.hero);
     this.build = new BuildSystem(this);
-    this.allyCommand = new AllyCommand(this);
     this.waves = new WaveManager(this, this.diff);
 
     this.hpG = this.add.graphics().setDepth(50);
@@ -51,8 +52,7 @@ class GameScene extends Phaser.Scene {
     cam.setBounds(0, 0, CONFIG.WORLD_W, CONFIG.WORLD_H);
     cam.setBackgroundColor('#1b2a1a');
     this.camTarget = { x: 0, y: 0 };
-    this.jumpToHero();
-    cam.setScroll(this.camTarget.x, this.camTarget.y);
+    this.jumpCameraTo(this.keep.x + 300, this.keep.y);
 
     if (this.simJob) {
       // the bot drives the hero; no HUD, no player input
@@ -78,62 +78,48 @@ class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- map
   drawMap() {
-    const T = CONFIG.TILE, W = CONFIG.MAP_W, H = CONFIG.MAP_H, p = this.pathing;
+    const T = CONFIG.TILE, W = CONFIG.MAP_W, H = CONFIG.MAP_H, p = this.pathing, m = CONFIG.map;
     const g = this.make.graphics({ x: 0, y: 0, add: false });
     const rnd = new Phaser.Math.RandomDataGenerator(['castle']);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const t = p.tileType(x, y);
-        let c;
-        if (t === TILE_T.TERRAIN) {
-          const v = rnd.between(0, 2);
-          c = [0x2c4a2a, 0x2f4e2c, 0x2a4627][v];
-        } else if (t === TILE_T.PATH) {
-          c = (x + y) % 2 ? 0x8d7b58 : 0x86754f;
-          if (x >= CONFIG.map.spawnZoneX) c = (x + y) % 2 ? 0x8a5a4a : 0x845446;
-        } else if (t === TILE_T.CONNECTOR) {
-          c = (x + y) % 2 ? 0x9b8a66 : 0x94835e;
-        } else c = 0x3a3f48;
-        g.fillStyle(c, 1); g.fillRect(x * T, y * T, T, T);
+    const COLORS = {
+      [TILE_T.GRASS]: [0x2d7f4e, 0x2f8552, 0x2b7a4b],
+      [TILE_T.DIRT]: [0x87543f, 0x8b5842, 0x84513c],
+      [TILE_T.BRIDGE]: [0xb07e56],
+      [TILE_T.WATER]: [0x4fa9b5, 0x52adb9],
+      [TILE_T.ROCK]: [0x5f6770, 0x636b74, 0x5b636c],
+      [TILE_T.TREE]: [0x2b7a4b],
+      [TILE_T.KEEP]: [0x84513c],
+    };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const cs = COLORS[p.tileType(x, y)];
+      g.fillStyle(cs[rnd.between(0, cs.length - 1)], 1); g.fillRect(x * T, y * T, T, T);
+    }
+    // details: rock bumps, tree canopies, water ripples, bridge planks
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = p.tileType(x, y), cx = x * T + T / 2, cy = y * T + T / 2;
+      if (t === TILE_T.ROCK && rnd.frac() < 0.35) {
+        g.fillStyle(0x767e88, 1); g.fillCircle(cx + rnd.between(-8, 8), cy + rnd.between(-8, 8), rnd.between(5, 10));
+      } else if (t === TILE_T.TREE) {
+        g.fillStyle(0x1f5a35, 1); g.fillCircle(cx + 2, cy + 4, 15);
+        g.fillStyle([0x8fbf3c, 0x9ccb45, 0x82b337][rnd.between(0, 2)], 1); g.fillCircle(cx + rnd.between(-3, 3), cy + rnd.between(-3, 3), rnd.between(12, 15));
+        g.fillStyle(0xb4d65a, 0.6); g.fillCircle(cx - 4, cy - 4, 5);
+      } else if (t === TILE_T.WATER && rnd.frac() < 0.25) {
+        g.lineStyle(2, 0x8ad6de, 0.6); g.lineBetween(cx - 8, cy, cx + 6, cy);
+      } else if (t === TILE_T.BRIDGE) {
+        g.lineStyle(2, 0x7d5638, 0.8);
+        const vert = p.tileType(x, y - 1) === TILE_T.WATER || p.tileType(x, y + 1) === TILE_T.WATER;
+        for (let i = 0; i < T; i += 8) vert ? g.lineBetween(x * T, y * T + i, x * T + T, y * T + i) : g.lineBetween(x * T + i, y * T, x * T + i, y * T + T);
+      } else if (t === TILE_T.GRASS && rnd.frac() < 0.08) {
+        g.fillStyle(0x3d9a60, 1); g.fillCircle(cx + rnd.between(-10, 10), cy + rnd.between(-10, 10), 3);
       }
     }
-    // lane edges
-    g.lineStyle(2, 0x5f5238, 0.8);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        if (!p.isLane(x, y)) continue;
-        if (!p.isLane(x, y - 1) && p.tileType(x, y - 1) !== TILE_T.KEEP) g.lineBetween(x * T, y * T, x * T + T, y * T);
-        if (!p.isLane(x, y + 1) && p.tileType(x, y + 1) !== TILE_T.KEEP) g.lineBetween(x * T, y * T + T, x * T + T, y * T + T);
-        if (!p.isLane(x - 1, y) && p.tileType(x - 1, y) !== TILE_T.KEEP) g.lineBetween(x * T, y * T, x * T, y * T + T);
-        if (!p.isLane(x + 1, y) && x + 1 < W) g.lineBetween(x * T + T, y * T, x * T + T, y * T + T);
-      }
+    // neutral camps
+    for (const c of m.camps) {
+      g.lineStyle(3, 0x9fe9ff, 0.35); g.strokeCircle(c.x * T, c.y * T, 70);
     }
-    // connector markings (always open)
-    g.lineStyle(2, 0xe8d9a0, 0.35);
-    for (const r of CONFIG.map.connectors) {
-      for (let y = r.y; y < r.y + r.h; y += 2) {
-        g.lineBetween((r.x + 0.5) * T, y * T + 6, (r.x + 0.5) * T, y * T + 26);
-        g.lineBetween((r.x + r.w - 0.5) * T, y * T + 6, (r.x + r.w - 0.5) * T, y * T + 26);
-      }
-    }
-    // decorative rocks/trees on terrain far from lanes
-    for (let i = 0; i < 260; i++) {
-      const x = rnd.between(0, W - 1), y = rnd.between(0, H - 1);
-      let near = false;
-      for (let yy = y - 3; yy <= y + 3 && !near; yy++) for (let xx = x - 3; xx <= x + 3; xx++) if (p.isLane(xx, yy) || p.tileType(xx, yy) === TILE_T.KEEP) { near = true; break; }
-      if (near) continue;
-      const cx = x * T + rnd.between(6, 26), cy = y * T + rnd.between(6, 26);
-      if (rnd.frac() < 0.7) {
-        g.fillStyle(0x1f3a1d, 1); g.fillCircle(cx, cy, rnd.between(9, 16));
-        g.fillStyle(0x264a22, 1); g.fillCircle(cx - 3, cy - 3, rnd.between(5, 9));
-      } else {
-        g.fillStyle(0x5d6168, 1); g.fillCircle(cx, cy, rnd.between(5, 10));
-        g.fillStyle(0x777b82, 1); g.fillCircle(cx - 2, cy - 2, 3);
-      }
-    }
-    // spawn portals
-    for (const l of CONFIG.map.lanes) {
-      const sx = l.spawn.x * T, sy = l.spawn.y * T;
+    // enemy spawn portals
+    for (const s of m.spawns) {
+      const sx = s.x * T, sy = s.y * T;
       g.fillStyle(0x2a0a0a, 0.8); g.fillCircle(sx, sy, 40);
       g.lineStyle(4, 0xff3030, 0.8); g.strokeCircle(sx, sy, 40);
       g.lineStyle(2, 0xff8080, 0.5); g.strokeCircle(sx, sy, 28);
@@ -176,7 +162,6 @@ class GameScene extends Phaser.Scene {
       if (this.ui && this.ui.isOverUI(pointer.x, pointer.y)) return;
       const wx = pointer.worldX, wy = pointer.worldY;
       if (pointer.middleButtonDown()) {
-        if (!this.spaceHeld) return;
         this.dragPan = { x: pointer.x, y: pointer.y, sx: this.cameras.main.scrollX, sy: this.cameras.main.scrollY };
         return;
       }
@@ -206,7 +191,7 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointermove', (pointer) => {
       this.pointerInside = true;
       if (this.dragPan) {
-        if (!pointer.middleButtonDown() || !this.spaceHeld) { this.dragPan = null; return; }
+        if (!pointer.middleButtonDown()) { this.dragPan = null; return; }
         this.camTarget.x = this.dragPan.sx - (pointer.x - this.dragPan.x);
         this.camTarget.y = this.dragPan.sy - (pointer.y - this.dragPan.y);
         this.clampCamTarget();
@@ -299,8 +284,7 @@ class GameScene extends Phaser.Scene {
       case 'KeyS': this.hero.commandStop(); this.setCursorMode(null); break;
       case 'KeyV': this.ui.toggleBuildPanel(); break;
       case 'KeyU': this.upgradeKeep(); break;
-      case 'KeyN': case 'Enter': this.waves.startWave(); break;
-      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': {
+      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': {
         const n = code.slice(-1);
         const type = Object.keys(CONFIG.buildings).find(k => CONFIG.buildings[k].key === n);
         if (type) { this.build.startPlacing(type); this.ui.toggleBuildPanel(true); }
@@ -311,7 +295,7 @@ class GameScene extends Phaser.Scene {
 
   onKeyUp(e) {
     const code = e.code;
-    if (code === 'Space') { this.spaceHeld = false; this.dragPan = null; }
+    if (code === 'Space') this.spaceHeld = false;
   }
 
   togglePause(force) {
@@ -335,7 +319,7 @@ class GameScene extends Phaser.Scene {
     this.camTarget.y = Phaser.Math.Clamp(this.camTarget.y, 0, CONFIG.WORLD_H - CONFIG.VIEW_H);
   }
 
-  // Camera follows the hero (or the Keep while the hero is dead).
+  // Centre the camera target on the hero (or the Keep while the hero is dead).
   jumpToHero() {
     const h = this.hero, k = this.keep;
     const fx = h.alive ? h.x : k.x, fy = h.alive ? h.y : k.y;
@@ -353,10 +337,10 @@ class GameScene extends Phaser.Scene {
 
   updateCamera(dt) {
     const C = CONFIG.camera, cam = this.cameras.main;
-    if (!this.spaceHeld) {
+    if (this.spaceHeld) {
       this.jumpToHero();
     } else if (!this.dragPan) {
-      // free look while Space is held: edge pan (middle-drag and minimap also work)
+      // free camera: edge pan (middle-drag and the minimap also move it)
       const p = this.input.activePointer;
       let mx = 0, my = 0;
       if (this.pointerInside && document.hasFocus()) {
@@ -374,8 +358,8 @@ class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- spawning & bookkeeping
-  spawnEnemy(type, x, y, mods) {
-    const e = new Enemy(this, type, x, y, mods);
+  spawnEnemy(type, x, y, mods, camp) {
+    const e = new Enemy(this, type, x, y, mods, camp);
     this.enemies.push(e);
     if (type === 'boss') {
       this.events.emit('notice', 'BOSS INCOMING!');
@@ -384,9 +368,9 @@ class GameScene extends Phaser.Scene {
     return e;
   }
 
-  spawnAlly(kind, x, y, tier) {
+  spawnAlly(kind, x, y, tier, lane) {
     const p = this.pathing.nearestWalkable(x, y, 10);
-    const a = new Ally(this, kind, p.x, p.y, tier);
+    const a = new Ally(this, kind, p.x, p.y, tier, lane);
     this.allies.push(a);
     Feel.ring(a.x, a.y, 24, 0x4a8fe0, { duration: 300, width: 2 });
     return a;
@@ -498,7 +482,6 @@ class GameScene extends Phaser.Scene {
     }
 
     this.waves.update(dt);
-    this.allyCommand.update(dt);
 
     // hold right-click: keep following the cursor
     const ptr = this.input.activePointer;
@@ -515,6 +498,7 @@ class GameScene extends Phaser.Scene {
     for (const e of this.enemies) e.update(dt);
     for (const a of this.allies) a.update(dt);
     for (const b of this.buildings) b.update(dt);
+    for (const t of this.towers) t.update(dt);
     this.keep.update(dt);
     for (const p of this.projectiles) p.update(dt);
 
@@ -537,7 +521,7 @@ class GameScene extends Phaser.Scene {
     const vis = (x, y) => x > cam.scrollX - 60 && x < cam.scrollX + CONFIG.VIEW_W + 60 && y > cam.scrollY - 60 && y < cam.scrollY + CONFIG.VIEW_H + 60;
     for (const e of this.enemies) {
       if (!e.alive || !vis(e.x, e.y)) continue;
-      if (e.hp < e.maxHp || e.isBoss) bar(e.x, e.y - e.radius - 8, e.isBoss ? 70 : Math.max(20, e.radius * 2.2), e.isBoss ? 6 : 4, e.hp / e.maxHp, e.isBoss ? 0xff3030 : 0xe04040);
+      if (e.hp < e.maxHp || e.isBoss) bar(e.x, e.y - e.radius - 8, e.isBoss ? 70 : Math.max(20, e.radius * 2.2), e.isBoss ? 6 : 4, e.hp / e.maxHp, e.isBoss ? 0xff3030 : e.neutral ? 0x5fd3c6 : 0xe04040);
       if (e.stunned) { g.fillStyle(e.status.frozen ? 0x9fe9ff : 0xffd23f, 1); g.fillCircle(e.x - 5, e.y - e.radius - 14, 2.5); g.fillCircle(e.x + 5, e.y - e.radius - 14, 2.5); }
       if (e.status.tauntT > 0) { g.fillStyle(0xffb347, 1); g.fillRect(e.x - 1.5, e.y - e.radius - 20, 3, 7); g.fillRect(e.x - 1.5, e.y - e.radius - 11, 3, 2.5); }
     }
@@ -548,6 +532,8 @@ class GameScene extends Phaser.Scene {
     }
     const k = this.keep;
     bar(k.x, k.ry - 22, 140, 8, k.hp / k.maxHp, 0x4ade80);
+    for (const s of this.towers) if (s.alive && vis(s.x, s.y)) bar(s.x, s.y - s.radius - 10, 56, 5, s.hp / s.maxHp, 0x4ade80);
+    for (const s of this.buildings) if (s.alive && s.hp < s.maxHp && vis(s.x, s.y)) bar(s.x, s.y - s.radius - 6, 44, 4, s.hp / s.maxHp, 0x4ade80);
     const h = this.hero;
     if (h.alive) {
       bar(h.x, h.y - h.radius - 12, 44, 5, h.hp / h.maxHp, 0x22c55e);

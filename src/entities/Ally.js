@@ -1,21 +1,23 @@
-// Allied soldiers/archers spawned by the Keep.
+// Allied lane creep: spawned at its lane's first tower each wave tick, pushes toward that lane's enemy spawn
+// along the spawn's flow field and fights the enemies it meets.
 
 class Ally extends Unit {
-  constructor(scene, kind, x, y, tier) {
+  constructor(scene, kind, x, y, tier, lane) {
     const d = CONFIG.allies[kind];
-    const mul = 1 + CONFIG.keep.allyTierScaling * (tier - 1);
+    const mul = 1 + CONFIG.keep.tierScaling * (tier - 1);
     super(scene, x, y, { radius: d.radius, hp: Math.round(d.hp * mul), armor: d.armor, team: 'player', color: d.color, shape: d.shape, depth: 19 });
     this.kind = kind;
     this.def = d;
+    this.lane = lane;
     this.damage = d.damage * mul;
     this.range = d.range;
     this.rate = d.rate;
     this.speed = d.speed;
     this.atkCd = 0;
-    this.retargetT = 0;
+    this.retargetT = Math.random() * 0.3;
     this.target = null;
-    this.slot = scene.allyCommand.nextSlot();
     this.rotates = d.shape === 'diamond';
+    this.viaBridge = true;   // walk to the lane's bridge first
   }
 
   update(dt) {
@@ -26,42 +28,39 @@ class Ally extends Unit {
     this.atkCd -= dt;
     if (this.stunned) { this.syncGfx(); return; }
 
-    const cmd = this.scene.allyCommand;
-    const post = cmd.postFor(this);
-    const leash = CONFIG.allies.leash;
-
     this.retargetT -= dt;
     if (this.retargetT <= 0 || !this.target || !this.target.alive) {
       this.retargetT = 0.3;
-      this.target = null;
-      let bestD = this.def.aggro;
-      for (const e of this.scene.enemies) {
-        if (!e.alive) continue;
-        if (Math.hypot(e.x - post.x, e.y - post.y) > leash + this.def.aggro * 0.5) continue;
-        const d = e.edgeDist(this.x, this.y);
-        if (d < bestD) { bestD = d; this.target = e; }
+      const t = this.target;
+      // keep the current target unless it got away
+      if (!(t && t.alive && t.edgeDist(this.x, this.y) <= this.def.aggro * 1.5)) {
+        this.target = Combat.nearestEnemy(this.x, this.y, this.def.aggro);
       }
     }
 
-    const t = this.target;
+    const sp = this.speed * this.speedMul, t = this.target;
     if (t && t.alive) {
-      // give up chasing if dragged too far from post
-      if (Math.hypot(t.x - post.x, t.y - post.y) > leash + 150) { this.target = null; }
-      else {
-        const d = t.edgeDist(this.x, this.y) - this.radius;
-        if (d <= this.range) {
-          this.vx = 0; this.vy = 0;
-          this.facing = Math.atan2(t.y - this.y, t.x - this.x);
-          if (this.atkCd <= 0) this.attack(t);
-        } else {
-          this.navigateTo(t.x, t.y, this.speed * this.speedMul, dt, 1500);
-        }
-        this.syncGfx();
-        return;
-      }
+      const d = t.edgeDist(this.x, this.y) - this.radius;
+      if (d <= this.range) {
+        this.vx = 0; this.vy = 0;
+        this.facing = Math.atan2(t.y - this.y, t.x - this.x);
+        if (this.atkCd <= 0) this.attack(t);
+      } else if (this.scene.pathing.los(this.x, this.y, t.x, t.y, this.radius)) this.moveToward(t.x, t.y, sp, dt, 1500);
+      else this.navigateTo(t.x, t.y, sp, dt, 1500);
+    } else {
+      this.push(sp, dt);
     }
-    this.navigateTo(post.x, post.y, this.speed * this.speedMul, dt, 1500, 8);
     this.syncGfx();
+  }
+
+  // Walk down the lane toward the enemy spawn; stand there once arrived.
+  push(sp, dt) {
+    const p = this.scene.pathing, field = p.spawnDist[this.lane];
+    const next = p.flowDistAt(this.x, this.y, field) > 3 ? p.laneNext(this, field) : null;
+    if (!next) { this.vx = 0; this.vy = 0; return; }
+    const T = CONFIG.TILE, dx = next.tx * T + T / 2 - this.x, dy = next.ty * T + T / 2 - this.y;
+    const d = Math.hypot(dx, dy) || 1;
+    this.steer(dx / d, dy / d, sp, dt, 1500);
   }
 
   attack(t) {

@@ -271,7 +271,7 @@ class Hero extends Unit {
     const range = this.stats.acquireRange;
     const t = this.autoTarget;
     if (t && t.alive && t.edgeDist(this.x, this.y) <= range + 120) return t;
-    this.autoTarget = Combat.nearestEnemy(this.x, this.y, range);
+    this.autoTarget = Combat.nearestEnemy(this.x, this.y, range, e => !e.neutral || e.provoked);
     return this.autoTarget;
   }
 
@@ -398,7 +398,7 @@ class Hero extends Unit {
 
   respawn() {
     const k = this.scene.keep;
-    this.x = k.rx + k.rw + 50; this.y = k.y;
+    this.x = k.front.x; this.y = k.front.y;
     this.alive = true;
     this.hp = this.maxHp;
     this.status.stunT = 0; this.status.slowT = 0;

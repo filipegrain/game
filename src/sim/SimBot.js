@@ -24,8 +24,6 @@ class SimBot {
   onKeepDamage(lane, dmg) { if (lane != null) this.leak[lane] += dmg; }
 
   update(dt) {
-    const wv = this.scene.waves;
-    if (wv.phase === 'build') { this.buildT += dt; if (this.buildT >= this.B.buildWait) { this.buildT = 0; wv.startWave(); } }
     this.spendT -= dt;
     if (this.spendT <= 0) { this.spendT = 0.5; this.spend(); }
     const h = this.hero;
@@ -39,7 +37,7 @@ class SimBot {
   }
 
   // ================================================================ movement
-  home() { const k = this.scene.keep; return { x: k.rx + k.rw + 50, y: k.y }; }
+  home() { return this.scene.keep.front; }
 
   think() {
     const h = this.hero, sc = this.scene, B = this.B;
@@ -62,16 +60,15 @@ class SimBot {
     const p = sc.pathing;
     let focus = null, fd = Infinity;
     for (const e of sc.enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || e.neutral) continue;
       const d = p.flowDistAt(e.x, e.y);
       if (d < fd) { fd = d; focus = e; }
     }
     this.focus = focus;
 
     if (!focus) {
-      // wait at the post of the next lane
-      const lanes = sc.waves.nextLanes || [1];
-      const post = sc.allyCommand.posts[lanes[0]];
+      // wait in front of the Keep, by the mid lane
+      const post = this.post();
       const o = h.order;
       if (dist(h, post) > 50 && !(o && o.type === 'move' && dist(o, post) < 50)) h.commandMove(post.x, post.y);
       return;
@@ -93,10 +90,12 @@ class SimBot {
     }
   }
 
+  post() { const k = this.scene.keep; return { x: k.rx + k.rw + 200, y: k.y + 110 }; }
+
   // ================================================================ skills
   near(range) {
     const h = this.hero, out = [];
-    for (const e of this.scene.enemies) if (e.alive && Math.hypot(e.x - h.x, e.y - h.y) <= range) out.push(e);
+    for (const e of this.scene.enemies) if (e.alive && !e.neutral && Math.hypot(e.x - h.x, e.y - h.y) <= range) out.push(e);
     return out;
   }
 
@@ -210,7 +209,7 @@ class SimBot {
     const isTower = !!CONFIG.buildings[step].range;
     const up = this.upgradable(step);
     const doUpgrade = () => { this.pay(step, up.upgradeCost(), 'upgrade', step, up.level + 1); up.upgrade(); };
-    // towers: upgrade before building new; barracks / mines: build new before upgrading.
+    // towers: upgrade before building new; mines: build new before upgrading.
     // The spot is picked only when buying (the scan is expensive); no spot left → upgrade instead, or skip.
     if (isTower && up) return { cost: up.upgradeCost(), run: doUpgrade };
     const cost = CONFIG.buildings[step].cost;
@@ -239,45 +238,42 @@ class SimBot {
   }
 
   // ================================================================ tower placement
-  // Lane-tile coverage of a tile within `range` px, per lane. Only lane tiles near the Keep (flow distance) count.
+  // Coverage of lane (dirt/bridge) tiles within `range` px of a footprint at (tx, ty), weighted toward the Keep.
   coverage(tx, ty, range) {
-    const p = this.scene.pathing, T = CONFIG.TILE, rt = Math.ceil(range / T), cov = [0, 0, 0];
-    const fp = CONFIG.buildings.footprint;
+    const p = this.scene.pathing, T = CONFIG.TILE, rt = Math.ceil(range / T), fp = CONFIG.buildings.footprint;
     const cx = CONFIG.px(tx + fp / 2), cy = CONFIG.px(ty + fp / 2);
-    for (let y = ty - rt; y <= ty + rt; y++) {
-      for (let x = tx - rt; x <= tx + rt; x++) {
-        if (!p.isLane(x, y)) continue;
-        const px = x * T + T / 2, py = y * T + T / 2;
-        if (Math.hypot(px - cx, py - cy) > range) continue;
-        const fd = p.dist[p.idx(x, y)];
-        if (!(fd <= 40)) continue;
-        cov[p.laneOfY(py)] += 1 + (40 - fd) / 40;   // closer to the Keep counts more
-      }
+    let cov = 0;
+    for (let y = ty - rt; y <= ty + rt; y++) for (let x = tx - rt; x <= tx + rt; x++) {
+      if (!p.isPath(x, y)) continue;
+      if (Math.hypot(x * T + T / 2 - cx, y * T + T / 2 - cy) > range) continue;
+      const fd = p.dist[p.idx(x, y)];
+      if (fd <= 45) cov += 1 + (45 - fd) / 45;
     }
     return cov;
   }
 
+  // Towers: grass spots covering the lane the most Keep damage came from (near its first tower), else round-robin.
+  // Mines: grass spots near the Keep that cover no lane. The route rule is checked on the winner only.
   pickSpot(type) {
-    const sc = this.scene, p = sc.pathing, def = CONFIG.buildings[type];
+    const sc = this.scene, p = sc.pathing, def = CONFIG.buildings[type], T = CONFIG.TILE;
     const isTower = !!def.range;
-    let lane = 0;
-    if (isTower) {
-      const maxLeak = Math.max(...this.leak);
-      lane = maxLeak > 0 ? this.leak.indexOf(maxLeak) : (this.laneRR++ % 3);
+    const maxLeak = Math.max(...this.leak);
+    const lane = maxLeak > 0 ? this.leak.indexOf(maxLeak) : (this.laneRR++ % 3);
+    const anchorDef = CONFIG.map.towers[lane][0];
+    const anchor = isTower ? { x: anchorDef.x, y: anchorDef.y } : { x: CONFIG.map.keep.x + 2.5, y: CONFIG.map.keep.y + 2.5 };
+    const cands = [];
+    for (let ty = 0; ty < p.H; ty++) for (let tx = 0; tx < p.W; tx++) {
+      const d = Math.hypot(tx + 1 - anchor.x, ty + 1 - anchor.y);
+      if (d > 14) continue;
+      let grass = true;
+      p.forEachFootprint(tx, ty, CONFIG.buildings.footprint, (x, y) => { if (p.tileType(x, y) !== TILE_T.GRASS) grass = false; });
+      if (!grass) continue;
+      const c = sc.build.check(type, tx, ty);
+      if (!c.ok && !c.gold) continue;
+      const cov = this.coverage(tx, ty, isTower ? def.range : 160);
+      cands.push({ tx, ty, score: isTower ? cov - d * 0.5 : -cov - d * 0.3 });
     }
-    let best = null, bestScore = -Infinity;
-    for (let ty = 0; ty < p.H; ty++) {
-      for (let tx = 0; tx < p.W; tx++) {
-        if (p.tileType(tx, ty) !== TILE_T.TERRAIN) continue;
-        const c = sc.build.check(type, tx, ty);
-        if (!c.ok && !c.gold) continue;
-        const cov = this.coverage(tx, ty, isTower ? def.range : 230);
-        const total = cov[0] + cov[1] + cov[2];
-        // towers: best coverage of the chosen lane; others: keep good tower spots free
-        const score = isTower ? cov[lane] * 3 + total : -total;
-        if (score > bestScore) { bestScore = score; best = { tx, ty }; }
-      }
-    }
-    return best;
+    cands.sort((a, b) => b.score - a.score);
+    return cands.find(s => !p.wouldDisconnect(s.tx, s.ty, CONFIG.buildings.footprint)) || null;
   }
 }

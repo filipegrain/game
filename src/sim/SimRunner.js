@@ -84,8 +84,7 @@ const SimRunner = {
   },
 
   checkRunEnd(scene) {
-    if (scene.stats.wavesCleared >= this.settings.waveCap) { this.endRun(scene, 'cap'); return; }
-    if (scene.waves.phase === 'wave' && scene.stats.time - scene.recorder.waveStartT > CONFIG.sim.waveTimeout) this.endRun(scene, 'stalled');
+    if (scene.stats.wavesCleared >= this.settings.waveCap) this.endRun(scene, 'cap');
   },
 
   endRun(scene, reason) {

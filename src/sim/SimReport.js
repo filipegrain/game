@@ -76,9 +76,7 @@ const SimReport = {
     const add = (k, dmg, gold) => { const o = out[k] = out[k] || { damage: 0, gold: 0 }; o.damage += dmg; o.gold += gold; };
     for (const r of runs) {
       for (const t of ['arrow', 'cannon', 'frost']) if (r.goldOut[t]) add(t, r.damage['tower:' + t] || 0, r.goldOut[t]);
-      const allyDmg = (r.damage['ally:soldier'] || 0) + (r.damage['ally:archer'] || 0);
       if (r.goldOut.keep) add('keep tiers (Keep arrows only)', (r.damage.keep || 0), r.goldOut.keep);
-      if (r.goldOut.barracks) add('barracks (all ally dmg)', allyDmg, r.goldOut.barracks);
     }
     for (const k in out) out[k].perGold = out[k].gold ? Math.round(out[k].damage / out[k].gold * 10) / 10 : 0;
     return out;
@@ -182,7 +180,6 @@ const SimReport = {
       if (c.waves.min < F.earlyLossWave) add('high', 'Runs', `${name}: a run fell before wave ${F.earlyLossWave} (min ${c.waves.min}).`);
       if (c.capped === c.n) add('low', 'Runs', `${name}: every run reached the wave cap (${cap}). Raise the cap to tell it apart.`);
       if (c.errors) add('high', 'Runs', `${name}: ${c.errors} run(s) crashed with a game exception: ${c.errorText}`);
-      if (c.stalled) add('medium', 'Runs', `${name}: ${c.stalled} run(s) stalled (a wave lasted over ${CONFIG.sim.waveTimeout}s). Likely a stuck enemy or a bot problem.`);
     }
     const order = { high: 0, medium: 1, low: 2 };
     return flags.sort((a, b) => order[a.severity] - order[b.severity]);
@@ -253,10 +250,10 @@ const SimReport = {
     }));
 
     L.push('## Economy (mean per run)', '');
-    const outCats = ['keep', 'arrow', 'cannon', 'frost', 'barracks', 'mine'];
-    table(['Hero', 'Diff', 'Strategy', 'Earned', 'Bounty', 'Wave clear', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
+    const outCats = ['keep', 'arrow', 'cannon', 'frost', 'mine'];
+    table(['Hero', 'Diff', 'Strategy', 'Earned', 'Bounty', 'Wave tick', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
       const per = (v) => Math.round((v || 0) / c.n);
-      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.waveClear), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
+      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.tick), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
     }));
 
     L.push('## Items: mean wave of first purchase', '');

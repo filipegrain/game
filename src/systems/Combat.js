@@ -8,8 +8,9 @@ const Combat = {
 
   // opts: { source, melee, crit, skill, knock: {x, y, force}, structureMul, noNumber, lifesteal, color, isAttack }
   dealDamage(target, amount, opts = {}) {
-    if (!target || !target.alive || target.invulnerable || target.isBuilding) return 0;   // buildings are immune
+    if (!target || !target.alive || target.invulnerable) return 0;
     const src = opts.source;
+    if (target.neutral && !(src && src.isHero)) return 0;   // only the hero fights neutral camps
     const rage = src && src.isHero ? src.rage : null;   // Warrior Rage
     if (rage) amount *= rage.damageMul;
     const armor = target.getArmor ? target.getArmor() : (target.armor || 0);
@@ -50,10 +51,11 @@ const Combat = {
     return dmg;
   },
 
-  enemiesInRadius(x, y, r) {
+  // Enemies (including neutrals unless hostileOnly) within r.
+  enemiesInRadius(x, y, r, hostileOnly = false) {
     const out = [];
     for (const e of this.scene.enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || (hostileOnly && e.neutral)) continue;
       const rr = r + e.radius;
       if ((e.x - x) ** 2 + (e.y - y) ** 2 <= rr * rr) out.push(e);
     }
@@ -75,29 +77,33 @@ const Combat = {
     return out;
   },
 
-  // Damageable structures (only the Keep: buildings are immune)
+  // Player structures (Keep, lane towers, buildings) whose edge is within r.
   structuresInRadius(x, y, r) {
-    const out = [];
-    const k = this.scene.keep;
-    if (k.alive && k.edgeDist(x, y) <= r) out.push(k);
+    const sc = this.scene, out = [];
+    if (sc.keep.alive && sc.keep.edgeDist(x, y) <= r) out.push(sc.keep);
+    for (const s of sc.towers) if (s.alive && s.edgeDist(x, y) <= r) out.push(s);
+    for (const s of sc.buildings) if (s.alive && s.edgeDist(x, y) <= r) out.push(s);
     return out;
   },
 
-  nearestEnemy(x, y, range, filter) {
+  // Nearest enemy within range. Neutrals count only if `filter` accepts them (default: hostile enemies only).
+  nearestEnemy(x, y, range, filter = Combat.hostile) {
     let best = null, bestD = Infinity;
     for (const e of this.scene.enemies) {
       if (!e.alive) continue;
-      if (filter && !filter(e)) continue;
+      if (!filter(e)) continue;
       const d = Math.hypot(e.x - x, e.y - y) - e.radius;
       if (d <= range && d < bestD) { bestD = d; best = e; }
     }
     return best;
   },
 
-  // Enemies sorted by distance (for chain lightning etc.)
+  hostile(e) { return !e.neutral; },
+
+  // Hostile enemies sorted by distance (for chain lightning etc.)
   enemiesByDistance(x, y, range, exclude) {
     return this.scene.enemies
-      .filter(e => e.alive && !(exclude && exclude.has(e)) && Math.hypot(e.x - x, e.y - y) - e.radius <= range)
+      .filter(e => e.alive && !e.neutral && !(exclude && exclude.has(e)) && Math.hypot(e.x - x, e.y - y) - e.radius <= range)
       .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
   },
 

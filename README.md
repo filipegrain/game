@@ -1,6 +1,6 @@
 # Castle Defense
 
-A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build towers, upgrade your Keep, pick items as you level up, and hold off endless waves that come down three connected lanes. The run ends when the Keep falls.
+A top-down 2D castle defense prototype built with Phaser 3. You control a hero (Warrior or Mage) MOBA-style, build towers, upgrade your Keep, pick items as you level up, and hold off endless waves that come down three lanes across a river. Allied creeps march out of your lane towers, neutral camps wait in the forest, and the run ends when the Keep falls.
 
 All visuals are drawn shapes and all sounds are synthesized. The game uses no image or audio assets.
 
@@ -30,35 +30,37 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 **Camera**
 | Input | Action |
 |---|---|
-| (default) | Locked on the hero (on the Keep while the hero is dead) |
-| Hold Space | Look around: screen edges, middle-drag, or left-click the minimap |
+| (default) | Free: push the mouse to a screen edge, middle-drag, or left-click the minimap |
+| Hold Space | Follow the hero (the Keep while the hero is dead) |
 | Minimap | Right-click to move the hero |
 
 **Base & economy**
 | Input | Action |
 |---|---|
 | V | Toggle the build panel |
-| 1–5 | Place Arrow Tower / Cannon / Frost Tower / Barracks / Gold Mine |
+| 1–4 | Place Arrow Tower / Cannon / Frost Tower / Gold Mine |
 | Left-click a building | Select it (upgrade, sell) |
 | U | Upgrade the Keep |
-| N / Enter | Start the next wave |
 
 **Other:** **P** or **Esc** pauses (Esc first cancels placing, aiming or menus), **M** mutes.
 
 ## How it plays
 
-- **Waves:** each wave starts when you press N, so build as long as you like in between. Every fifth wave includes a boss, and the waves scale forever.
-- **Buildings** can't be damaged; enemies only fight the hero, allies and the Keep. Sappers ignore everything and rush the Keep.
-- **Keep tiers (1–4):** each tier adds HP and more allies, unlocks new buildings, and later gives the Keep its own attack and auto-repair.
+- **Map:** the Keep sits west of a river. Three lanes cross it on bridges and branch through a forest to three enemy spawns in the east. Rocks, trees and the river block movement. The map is drawn from `docs/map-sketch.png`; `node tools/sketch2map.mjs docs/map-sketch.png` regenerates the grid in `CONFIG.map`.
+- **Waves:** a wave hits all three lanes every minute (the first after 30 s), whether or not the last one is dead. Wave 1 has 15 enemies and each wave adds 5; every fifth wave brings a boss in place of 10 of them. Enemy stats scale forever.
+- **Lane towers and creeps:** each lane has 2–3 allied towers. Every wave, 5 creeps march from the lane's first tower (the one nearest the Keep) toward the enemy spawn. Lose that tower and the lane gets no more creeps. Towers are never rebuilt.
+- **Neutral camps:** monsters in the corners and the forest fight back only when the hero hits them. They give gold and XP, and a cleared camp refills on the next wave.
+- **Buildings** go on any grass or dirt tile (not rocks, trees, the river or bridges). They block movement, so enemies attack the ones in their way. Sappers go straight for towers and buildings. A spot that would wall off every route to the Keep is refused.
+- **Keep tiers (1–4):** each tier adds Keep HP, makes lane towers and creeps 15% stronger, unlocks buildings, and later gives the Keep its own attack and nearby structure repair.
 - **Leveling:** no level cap. All skills are available from the start, grow stronger every level, and unlock extra effects at milestone levels. There is no mana, only cooldowns.
-- **Items:** every level-up offers a choice of items. Picking one you own levels it up, and owned items show up more often. There is no slot limit. Gold only buys buildings and Keep tiers.
+- **Items:** every level-up offers a choice of items. Picking one you own levels it up, and owned items show up more often. There is no slot limit. Gold (from kills and a payout every wave) only buys buildings and Keep tiers.
 - **Score:** based on waves, kills, hero level and time. The best score for each difficulty is saved in your browser.
 
 ## Balance simulation
 
 **Simulate** on the main menu opens a setup panel. Pick heroes, difficulties, strategies, seeds per combination and a wave cap, then **Run**. A bot plays each combination in the real game at high speed. You can watch it, or cancel and keep a report of the runs that finished.
 
-The report screen shows waves cleared per hero, strategy and difficulty, plus automatic balance flags. **Download .md** gives the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. **Download .json** gives the raw data for diffing two balance passes. **Last report** on the menu reopens the most recent one. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
+The report screen shows waves survived (about one per minute) per hero, strategy and difficulty, plus automatic balance flags. **Download .md** gives the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. **Download .json** gives the raw data for diffing two balance passes. **Last report** on the menu reopens the most recent one. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
 
 ## Development
 
@@ -71,7 +73,9 @@ src/
   main.js      Phaser boot
   scenes/      Menu, Game (simulation), UI (HUD), GameOver, SimScenes (balance sim setup/progress/report)
   sim/         balance simulation: runner, bot, recorder, report
-  entities/    Unit base, Hero, Enemy, Ally, Building, Keep, Projectile
+  entities/    Unit base, Hero, Enemy (also neutral camps), Ally (lane creeps), Building, Tower (lane towers), Keep, Projectile
   heroes/      Warrior and Mage skill kits
-  systems/     waves, pathing (flow field), combat, economy, building, item picks, leveling, ally commands, game feel
+  systems/     waves, pathing (flow fields), combat, economy, building, item picks, leveling, game feel
+tools/         sketch2map.mjs (map sketch PNG → CONFIG.map grid), png.mjs
+docs/          map-sketch.png
 ```

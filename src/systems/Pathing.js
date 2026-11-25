@@ -1,6 +1,7 @@
-// Tile map, collision, flow field (enemies → Keep) and A* (hero/allies).
+// Tile map, collision, flow fields (enemies → Keep, creeps → enemy spawns) and A* (hero/creeps).
 
-const TILE_T = { TERRAIN: 0, PATH: 1, CONNECTOR: 2, KEEP: 3 };
+const TILE_T = { GRASS: 0, DIRT: 1, BRIDGE: 2, WATER: 3, ROCK: 4, TREE: 5, KEEP: 6 };
+const TILE_CHARS = { '.': TILE_T.GRASS, ':': TILE_T.DIRT, '=': TILE_T.BRIDGE, '~': TILE_T.WATER, '#': TILE_T.ROCK, 'T': TILE_T.TREE };
 
 class MinHeap {
   constructor() { this.items = []; this.prio = []; }
@@ -54,7 +55,9 @@ class Pathing {
     const n = this.W * this.H;
     this.tiles = new Uint8Array(n);
     this.building = new Array(n).fill(null);
-    this.dist = new Float32Array(n);
+    this.dist = new Float32Array(n);                                    // flow distance to the Keep
+    this.spawnDist = CONFIG.map.spawns.map(() => new Float32Array(n));  // flow distance to each enemy spawn
+    this.bridgeDist = CONFIG.map.spawns.map(() => new Float32Array(n)); // flow distance to each lane's bridge (its outermost tower)
     this.gScore = new Float32Array(n);
     this.cameFrom = new Int32Array(n);
     this.closed = new Uint8Array(n);
@@ -64,21 +67,24 @@ class Pathing {
 
   buildMap() {
     const m = CONFIG.map;
-    const fill = (r, t) => {
-      for (let y = r.y; y < r.y + r.h; y++)
-        for (let x = r.x; x < r.x + r.w; x++)
-          if (this.inBounds(x, y)) this.tiles[this.idx(x, y)] = t;
-    };
-    m.paths.forEach(r => fill(r, TILE_T.PATH));
-    m.connectors.forEach(r => fill(r, TILE_T.CONNECTOR));
-    fill(m.keep, TILE_T.KEEP);
+    m.grid.forEach((row, y) => { for (let x = 0; x < this.W; x++) this.tiles[this.idx(x, y)] = TILE_CHARS[row[x]] ?? TILE_T.ROCK; });
+    const k = m.keep;
+    for (let y = k.y; y < k.y + k.h; y++) for (let x = k.x; x < k.x + k.w; x++) this.tiles[this.idx(x, y)] = TILE_T.KEEP;
+    this.keepGoals = [];   // walkable tiles touching the Keep
+    for (let y = k.y - 1; y <= k.y + k.h; y++) for (let x = k.x - 1; x <= k.x + k.w; x++)
+      if (this.inBounds(x, y) && this.tiles[this.idx(x, y)] <= TILE_T.BRIDGE) this.keepGoals.push(this.idx(x, y));
+    this.spawnTiles = m.spawns.map(s => this.idx(Math.floor(s.x), Math.floor(s.y)));
+    this.bridgeTiles = m.towers.map(l => { const t = l[l.length - 1]; return this.idx(Math.floor(t.x), Math.floor(t.y)); });
   }
 
   idx(x, y) { return y * this.W + x; }
   inBounds(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
   tileOf(px) { return Math.floor(px / this.T); }
-  tileType(x, y) { return this.inBounds(x, y) ? this.tiles[this.idx(x, y)] : TILE_T.TERRAIN; }
-  isLane(x, y) { const t = this.tileType(x, y); return t === TILE_T.PATH || t === TILE_T.CONNECTOR; }
+  tileType(x, y) { return this.inBounds(x, y) ? this.tiles[this.idx(x, y)] : TILE_T.ROCK; }
+  isGround(x, y) { return this.tileType(x, y) <= TILE_T.BRIDGE; }   // walkable terrain, ignoring buildings
+  isPath(x, y) { const t = this.tileType(x, y); return t === TILE_T.DIRT || t === TILE_T.BRIDGE; }
+  isBuildable(x, y) { const t = this.tileType(x, y); return t === TILE_T.GRASS || t === TILE_T.DIRT; }
+  tileCost(i) { return this.tiles[i] === TILE_T.GRASS ? CONFIG.map.grassCost : 1; }
   buildingAt(x, y) { return this.inBounds(x, y) ? this.building[this.idx(x, y)] : null; }
   forEachFootprint(tx, ty, fp, fn) {
     for (let y = ty; y < ty + fp; y++) for (let x = tx; x < tx + fp; x++) fn(x, y);
@@ -87,20 +93,34 @@ class Pathing {
     this.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => {
       if (this.inBounds(x, y)) this.building[this.idx(x, y)] = b;
     });
+    this.computeFlowField();
   }
   freeBuilding(b) {
     this.forEachFootprint(b.tx, b.ty, b.fp, (x, y) => {
       if (this.inBounds(x, y) && this.building[this.idx(x, y)] === b) this.building[this.idx(x, y)] = null;
     });
+    this.computeFlowField();
   }
-  isWalkable(x, y) { return this.isLane(x, y) && !this.building[this.idx(x, y)]; }
+  isWalkable(x, y) { return this.isGround(x, y) && !this.building[this.idx(x, y)]; }
   blockedTile(x, y) { return !this.isWalkable(x, y); }
 
-  laneOfY(py) {
-    const ty = py / this.T;
-    if (ty < CONFIG.map.laneSplitTop) return 0;
-    if (ty >= CONFIG.map.laneSplitBot) return 2;
-    return 1;
+  // Would a footprint at (tx, ty) cut any enemy spawn off from the Keep?
+  wouldDisconnect(tx, ty, fp) {
+    const blocked = new Set();
+    this.forEachFootprint(tx, ty, fp, (x, y) => { if (this.inBounds(x, y)) blocked.add(this.idx(x, y)); });
+    const seen = new Uint8Array(this.W * this.H), queue = [];
+    for (const i of this.keepGoals) if (!blocked.has(i) && !this.building[i]) { seen[i] = 1; queue.push(i); }
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q], x = i % this.W, y = (i / this.W) | 0;
+      for (let d = 0; d < 4; d++) {
+        const [dx, dy] = DIRS8[d], nx = x + dx, ny = y + dy;
+        if (!this.isWalkable(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (seen[ni] || blocked.has(ni)) continue;
+        seen[ni] = 1; queue.push(ni);
+      }
+    }
+    return this.spawnTiles.some(i => !seen[i]);
   }
 
   // ---------------------------------------------------------- collision
@@ -191,72 +211,75 @@ class Pathing {
     return best || { x: px, y: py };
   }
 
-  // ---------------------------------------------------------- flow field
+  // ---------------------------------------------------------- flow fields
   canStepDiag(x, y, dx, dy) {
     return this.isWalkable(x + dx, y) && this.isWalkable(x, y + dy);
   }
 
-  computeFlowField() {
-    const dist = this.dist;
-    dist.fill(Infinity);
+  // Dijkstra from seed tiles over walkable tiles; grass costs more than dirt so units keep to the lanes.
+  fillField(field, seeds) {
+    field.fill(Infinity);
     const heap = new MinHeap();
-    const k = CONFIG.map.keep;
-    // goals: lane tiles touching the Keep
-    for (let y = k.y - 1; y <= k.y + k.h; y++) {
-      for (let x = k.x - 1; x <= k.x + k.w; x++) {
-        if (this.isLane(x, y)) {
-          const i = this.idx(x, y);
-          dist[i] = 0;
-          heap.push(i, 0);
-        }
-      }
-    }
+    for (const i of seeds) { if (this.building[i]) continue; field[i] = 0; heap.push(i, 0); }
     while (heap.size) {
       const i = heap.pop();
       const x = i % this.W, y = (i / this.W) | 0;
-      const d = dist[i];
+      const d = field[i];
       for (const [dx, dy, c] of DIRS8) {
         const nx = x + dx, ny = y + dy;
-        if (!this.isLane(nx, ny)) continue;
-        if (dx !== 0 && dy !== 0) {
-          // no diagonal corner cutting around terrain
-          if (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy)) continue;
-        }
+        if (!this.isWalkable(nx, ny)) continue;
+        if (dx !== 0 && dy !== 0 && !this.canStepDiag(x, y, dx, dy)) continue;   // no corner cutting
         const ni = this.idx(nx, ny);
-        const nd = d + c;
-        if (nd < dist[ni]) { dist[ni] = nd; heap.push(ni, nd); }
+        const nd = d + c * this.tileCost(ni);
+        if (nd < field[ni]) { field[ni] = nd; heap.push(ni, nd); }
       }
     }
+  }
+
+  computeFlowField() {
+    this.fillField(this.dist, this.keepGoals);
+    this.spawnDist.forEach((f, i) => this.fillField(f, [this.spawnTiles[i]]));
+    this.bridgeDist.forEach((f, i) => this.fillField(f, [this.bridgeTiles[i]]));
     this.flowVersion = (this.flowVersion || 0) + 1;
   }
 
-  // Next tile an enemy at pixel (px,py) should walk to, or null at the goal.
-  flowNext(px, py) {
+  // Next tile a unit at pixel (px,py) should walk to down `field` (default: toward the Keep), or null at the goal.
+  flowNext(px, py, field = this.dist) {
     const x = this.tileOf(px), y = this.tileOf(py);
     if (!this.inBounds(x, y)) return null;
     const i = this.idx(x, y);
-    if (this.isLane(x, y) && this.dist[i] === 0) return null;
-    let best = null, bestD = Infinity;
-    for (const [dx, dy, c] of DIRS8) {
-      const nx = x + dx, ny = y + dy;
-      if (!this.isLane(nx, ny)) continue;
-      const ni = this.idx(nx, ny);
-      if (dx !== 0 && dy !== 0 && (!this.isWalkable(x + dx, y) || !this.isWalkable(x, y + dy))) continue;
-      const d = this.dist[ni] + c;
-      if (d < bestD) { bestD = d; best = { tx: nx, ty: ny }; }
-    }
-    if (!best && !this.isLane(x, y)) {
-      // off-lane: head to the nearest lane tile
+    if (field[i] === 0) return null;
+    if (!this.isWalkable(x, y) || field[i] === Infinity) {
+      // off the field (knocked into a building, cut-off pocket): head to the nearest walkable tile
       const p = this.nearestWalkable(px, py, 8);
       return { tx: this.tileOf(p.x), ty: this.tileOf(p.y) };
+    }
+    let best = null, bestD = field[i];
+    for (const [dx, dy] of DIRS8) {
+      const nx = x + dx, ny = y + dy;
+      if (!this.isWalkable(nx, ny)) continue;
+      if (dx !== 0 && dy !== 0 && !this.canStepDiag(x, y, dx, dy)) continue;
+      const d = field[this.idx(nx, ny)];
+      if (d < bestD) { bestD = d; best = { tx: nx, ty: ny }; }
     }
     return best;
   }
 
-  flowDistAt(px, py) {
+  // Lane route: walk to the lane's bridge first (so each lane keeps its own crossing), then down `field`.
+  // unit.viaBridge is cleared once the bridge is reached.
+  laneNext(unit, field) {
+    if (unit.viaBridge) {
+      const bf = this.bridgeDist[unit.lane];
+      if (this.flowDistAt(unit.x, unit.y, bf) > 3) return this.flowNext(unit.x, unit.y, bf);
+      unit.viaBridge = false;
+    }
+    return this.flowNext(unit.x, unit.y, field);
+  }
+
+  flowDistAt(px, py, field = this.dist) {
     const x = this.tileOf(px), y = this.tileOf(py);
     if (!this.inBounds(x, y)) return Infinity;
-    return this.dist[this.idx(x, y)];
+    return field[this.idx(x, y)];
   }
 
   // ---------------------------------------------------------- A*
@@ -280,7 +303,7 @@ class Pathing {
     const heap = new MinHeap();
     g[start] = 0; heap.push(start, h(stx, sty));
     let found = false, iter = 0;
-    while (heap.size && iter++ < 8000) {
+    while (heap.size && iter++ < 12000) {
       const i = heap.pop();
       if (closed[i]) continue;
       if (i === end) { found = true; break; }

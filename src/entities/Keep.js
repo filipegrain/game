@@ -1,4 +1,4 @@
-// The Keep: lose condition, spawns allies, shoots arrows at higher tiers.
+// The Keep: lose condition. Its tier powers up lane towers and creeps; it shoots arrows at higher tiers.
 
 class Keep {
   constructor(scene) {
@@ -13,13 +13,14 @@ class Keep {
     this.isStructure = true;
     this.team = 'player';
     this.armor = 5;
-    this.spawnT = 2;
-    this.spawnCount = 0;
     this.atkCd = 0;
     this.flashT = 0;
     this.gfx = scene.add.graphics().setDepth(13);
     this.redraw();
   }
+
+  // Where the hero spawns and respawns: just off the Keep's south-east corner, clear of the mid tower.
+  get front() { return { x: this.rx + this.rw + 40, y: this.ry + this.rh + 30 }; }
 
   get tierDef() { return CONFIG.keep.tiers[this.tier - 1]; }
   get nextTierDef() { return CONFIG.keep.tiers[this.tier] || null; }
@@ -53,19 +54,6 @@ class Keep {
     return Math.hypot(px - cx, py - cy);
   }
 
-  get buildRadius() { return this.tierDef.buildRadius; }
-
-  maxAllies() {
-    let cap = this.tierDef.maxAllies;
-    for (const b of this.scene.buildings) if (b.alive && b.type === 'barracks') cap += b.def.allyCap[b.level - 1];
-    return cap;
-  }
-  spawnInterval() {
-    let mul = 1;
-    for (const b of this.scene.buildings) if (b.alive && b.type === 'barracks') mul *= b.def.spawnMul[b.level - 1];
-    return this.tierDef.spawnEvery * Math.max(0.35, mul);
-  }
-
   upgrade() {
     const next = this.nextTierDef;
     if (!next) return false;
@@ -73,6 +61,7 @@ class Keep {
     this.tier++;
     this.maxHp = next.hp;
     this.hp = Math.min(this.maxHp, this.hp + gain);
+    for (const t of this.scene.towers) if (t.alive) t.applyTier(this.tier);
     this.redraw();
     Feel.ring(this.x, this.y, 260, 0xffd23f, { duration: 600, width: 6 });
     Feel.burst(this.x, this.y, 0xffd23f, 30);
@@ -92,19 +81,8 @@ class Keep {
     if (!this.alive) return;
     const td = this.tierDef;
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.redraw(); }
-    if (td.repair && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + td.repair * dt);
-
-    // allies
-    this.spawnT -= dt;
-    if (this.spawnT <= 0) {
-      this.spawnT = this.spawnInterval();
-      const alive = this.scene.allies.filter(a => a.alive).length;
-      if (alive < this.maxAllies()) {
-        this.spawnCount++;
-        const kind = td.archers && this.spawnCount % CONFIG.keep.archerEvery === 0 ? 'archer' : 'soldier';
-        const sx = this.rx + this.rw + 22, sy = this.y + (Math.random() - 0.5) * 80;
-        this.scene.spawnAlly(kind, sx, sy, this.tier);
-      }
+    if (td.repair) {
+      for (const s of Combat.structuresInRadius(this.x, this.y, CONFIG.keep.repairRadius)) s.hp = Math.min(s.maxHp, s.hp + td.repair * dt);
     }
 
     // attack

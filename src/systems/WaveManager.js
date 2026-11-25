@@ -1,15 +1,17 @@
-// Build phase (until the player starts the wave) → wave phase → clear → next build phase. Endless scaling.
+// Timed waves. Every CONFIG.waves.interval seconds (the first after firstDelay) one wave tick:
+// enemies spawn at every enemy spawn, creeps at every lane whose first tower stands, cleared neutral camps
+// refill, and tick gold (plus Gold Mines) is paid. Endless; enemy count and stats grow per wave.
 
 class WaveManager {
   constructor(scene, diff) {
     this.scene = scene;
     this.diff = diff;
-    this.wave = 0;               // last wave started
-    this.phase = 'build';        // 'build' | 'wave'
-    this.queues = [];            // per lane: list of { type, delay }
-    this.spawned = 0;
-    this.toSpawn = 0;
+    this.wave = 0;                               // last wave started
+    this.timer = CONFIG.waves.firstDelay;        // s until the next wave tick
+    this.queues = CONFIG.map.spawns.map(() => ({ items: [], t: 0 }));   // per spawn: pending { type, at }
+    this.camps = CONFIG.map.camps.map(def => ({ def, units: [] }));
     this.next = this.planWave(1);
+    this.refillCamps(this.mods(1));
   }
 
   mods(n) {
@@ -19,19 +21,14 @@ class WaveManager {
       dmg: this.diff.enemyMul * (1 + W.dmgPerWave * e),
       speed: Math.min(W.speedCap, 1 + W.speedPerWave * e),
       gold: 1 + W.goldPerWaveScaling * (n - 1),
-      xp: 1 + 0.06 * (n - 1),
+      xp: 1 + W.xpPerWaveScaling * (n - 1),
     };
   }
 
   planWave(n) {
     const W = CONFIG.waves;
-    const e = (n - 1) * this.diff.scaling;
-    // lanes
-    let laneCount = n < 3 ? 1 : n < 6 ? Phaser.Math.Between(1, 2) : n < 10 ? Phaser.Math.Between(2, 3) : 3;
-    if (n >= 6 && Math.random() < 0.25) laneCount = Math.max(1, laneCount - 1);
-    const lanes = Phaser.Utils.Array.Shuffle([0, 1, 2]).slice(0, laneCount).sort();
-    // composition
-    const count = Math.round(W.baseCount + W.countPerWave * e);
+    const bosses = n % W.bossEvery === 0 ? Math.floor(n / W.bossGrowEvery) + 1 : 0;
+    const count = Math.max(0, W.baseCount + W.countPerWave * (n - 1) - bosses * W.bossReplaces);
     const pool = Object.keys(W.weights).filter(t => n >= W.unlocks[t]);
     const totalW = pool.reduce((s, t) => s + W.weights[t], 0);
     const list = [];
@@ -40,87 +37,92 @@ class WaveManager {
       for (const t of pool) { r -= W.weights[t]; if (r <= 0) { pick = t; break; } }
       list.push(pick);
     }
-    const bosses = n % W.bossEvery === 0 ? Math.floor(n / (W.bossEvery * 2)) + 1 : 0;
-    return { n, lanes, list, bosses, mods: this.mods(n) };
-  }
-
-  startWave() {
-    if (this.phase !== 'build') return;
-    const plan = this.next;
-    this.wave = plan.n;
-    this.phase = 'wave';
-    this.curMods = plan.mods;
-    this.curLanes = plan.lanes;
-    // distribute enemies across lanes in groups
-    const W = CONFIG.waves;
-    this.queues = plan.lanes.map(() => []);
-    const shuffled = Phaser.Utils.Array.Shuffle(plan.list.slice());
-    shuffled.forEach((t, i) => this.queues[i % plan.lanes.length].push(t));
-    this.lanesQ = plan.lanes.map((lane, li) => {
-      const q = this.queues[li];
-      const items = [];
-      let t = 0.5 + li * 0.4, inGroup = 0, groupSize = Phaser.Math.Between(W.groupSize[0], W.groupSize[1]);
-      for (const type of q) {
-        items.push({ type, at: t });
-        inGroup++;
-        if (inGroup >= groupSize) { t += W.groupPause; inGroup = 0; groupSize = Phaser.Math.Between(W.groupSize[0], W.groupSize[1]); }
-        else t += W.spawnInterval;
-      }
-      return { lane, items, t: 0 };
-    });
-    for (let b = 0; b < plan.bosses; b++) {
-      const lq = this.lanesQ[b % this.lanesQ.length];
-      const last = lq.items.length ? lq.items[lq.items.length - 1].at : 0;
-      lq.items.push({ type: 'boss', at: last + 2 + b });
-    }
-    this.toSpawn = this.lanesQ.reduce((s, l) => s + l.items.length, 0);
-    this.spawned = 0;
-    Sfx.play('wave');
-    if (plan.bosses) Sfx.play('boss');
-    this.scene.events.emit('waveStart', this.wave, plan);
-    for (const l of plan.lanes) this.scene.ping(this.spawnPoint(l).x, this.spawnPoint(l).y, 0xff4040);
-    this.next = this.planWave(this.wave + 1);
-  }
-
-  spawnPoint(lane) {
-    const T = CONFIG.TILE, s = CONFIG.map.lanes[lane].spawn;
-    return { x: s.x * T, y: s.y * T };
+    return { n, list, bosses, count: count + bosses, mods: this.mods(n) };
   }
 
   update(dt) {
-    if (this.phase === 'build') return;
-    // spawning
-    for (const lq of this.lanesQ) {
-      lq.t += dt;
-      while (lq.items.length && lq.items[0].at <= lq.t) {
-        const it = lq.items.shift();
-        const sp = this.spawnPoint(lq.lane);
-        const T = CONFIG.TILE;
-        const laneDef = CONFIG.map.paths[lq.lane === 0 ? 0 : lq.lane === 1 ? 1 : 2];
-        const y = Phaser.Math.Clamp(sp.y + (Math.random() - 0.5) * (laneDef.h - 1) * T, laneDef.y * T + 14, (laneDef.y + laneDef.h) * T - 14);
-        const e = this.scene.spawnEnemy(it.type, sp.x + Math.random() * 20, y, this.curMods);
-        e.lane = lq.lane;
-        this.spawned++;
+    this.timer -= dt;
+    if (this.timer <= 0) { this.timer += CONFIG.waves.interval; this.tick(); }
+    this.queues.forEach((q, lane) => {
+      q.t += dt;
+      while (q.items.length && q.items[0].at <= q.t) {
+        const it = q.items.shift();
+        const sp = this.spawnPoint(lane);
+        const p = this.scene.pathing.nearestWalkable(sp.x + (Math.random() - 0.5) * 60, sp.y + (Math.random() - 0.5) * 60, 14);
+        const e = this.scene.spawnEnemy(it.type, p.x, p.y, this.curMods);
+        e.lane = lane;
+        e.viaBridge = true;
+      }
+    });
+  }
+
+  tick() {
+    const W = CONFIG.waves, sc = this.scene, plan = this.next;
+    this.wave = plan.n;
+    this.curMods = plan.mods;
+    sc.stats.wavesCleared = plan.n - 1;   // waves survived
+
+    // enemies: round-robin over the spawns, bosses last
+    const lists = this.queues.map(() => []);
+    Phaser.Utils.Array.Shuffle(plan.list.slice()).forEach((t, i) => lists[i % lists.length].push(t));
+    for (let b = 0; b < plan.bosses; b++) lists[b % lists.length].push('boss');
+    this.queues.forEach((q, lane) => {
+      const base = q.items.length ? q.items[q.items.length - 1].at - q.t + W.spawnInterval : 0;
+      q.items.push(...lists[lane].map((type, i) => ({ type, at: q.t + base + i * W.spawnInterval })));
+    });
+
+    this.spawnCreeps();
+    this.refillCamps(plan.mods);
+
+    // income
+    let mineGold = 0;
+    for (const b of sc.buildings) if (b.alive && b.type === 'mine') {
+      const g = b.def.income[b.level - 1];
+      mineGold += g;
+      Feel.floatText(b.x, b.y - 16, '+' + g + 'g', '#ffd23f', 14, 1000);
+    }
+    const gold = W.tickGoldBase + W.tickGoldPerWave * (plan.n - 1);
+    sc.economy.add(gold + mineGold);
+    if (sc.recorder) { sc.recorder.goldEarned('tick', gold); sc.recorder.goldEarned('mines', mineGold); }
+
+    Sfx.play('wave');
+    if (plan.bosses) Sfx.play('boss');
+    sc.events.emit('waveStart', this.wave, plan);
+    for (let l = 0; l < this.queues.length; l++) sc.ping(this.spawnPoint(l).x, this.spawnPoint(l).y, 0xff4040);
+    this.next = this.planWave(this.wave + 1);
+  }
+
+  // perLane creeps at each lane's first tower, if it still stands.
+  spawnCreeps() {
+    const sc = this.scene, A = CONFIG.allies, tier = sc.keep.tier;
+    const archers = A.archersPerLane[tier - 1];
+    for (const t of sc.towers) {
+      if (!t.alive || t.order !== 0) continue;
+      for (let i = 0; i < A.perLane; i++) {
+        const a = (i / A.perLane) * Math.PI * 2;
+        sc.spawnAlly(i < A.perLane - archers ? 'soldier' : 'archer', t.x + Math.cos(a) * 44, t.y + Math.sin(a) * 44, tier, t.lane);
       }
     }
-    // cleared?
-    if (this.spawned >= this.toSpawn && !this.scene.enemies.some(e => e.alive)) this.clearWave();
   }
 
-  clearWave() {
-    const W = CONFIG.waves;
-    const n = this.wave;
-    let gold = W.clearGoldBase + W.clearGoldPerWave * n;
-    let mineGold = 0;
-    for (const b of this.scene.buildings) if (b.alive && b.type === 'mine') { mineGold += b.def.income[b.level - 1]; Feel.floatText(b.x, b.y - 16, '+' + b.def.income[b.level - 1] + 'g', '#ffd23f', 14, 1000); }
-    this.scene.economy.add(gold + mineGold);
-    if (this.scene.recorder) { this.scene.recorder.goldEarned('waveClear', gold); this.scene.recorder.goldEarned('mines', mineGold); }
-    this.scene.leveling.addXp(W.clearXpBase + W.clearXpPerWave * n);
-    this.scene.stats.wavesCleared = n;
-    this.phase = 'build';
-    Sfx.play('gold');
-    this.scene.events.emit('waveCleared', n, gold + mineGold);
+  // Camps with no living monster get a fresh set.
+  refillCamps(mods) {
+    const N = CONFIG.neutrals, T = CONFIG.TILE;
+    for (const camp of this.camps) {
+      if (camp.units.some(u => u.alive)) continue;
+      camp.units = [];
+      for (let i = 0; i < N.perCamp; i++) {
+        const a = (i / N.perCamp) * Math.PI * 2;
+        const p = this.scene.pathing.nearestWalkable(camp.def.x * T + Math.cos(a) * 30, camp.def.y * T + Math.sin(a) * 30, 14);
+        camp.units.push(this.scene.spawnEnemy(camp.def.kind, p.x, p.y, mods, camp));
+      }
+    }
   }
 
-  get nextLanes() { return this.phase === 'build' ? this.next.lanes : this.curLanes; }
+  spawnPoint(lane) {
+    const T = CONFIG.TILE, s = CONFIG.map.spawns[lane];
+    return { x: s.x * T, y: s.y * T };
+  }
+
+  get hostileCount() { return this.scene.enemies.filter(e => e.alive && !e.neutral).length + this.queues.reduce((s, q) => s + q.items.length, 0); }
 }

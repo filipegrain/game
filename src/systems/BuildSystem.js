@@ -11,39 +11,36 @@ class BuildSystem {
 
   isUnlocked(type) { return this.keep.tier >= CONFIG.buildings[type].tier; }
 
-  inBuildRadius(tx, ty) {
-    const k = CONFIG.map.keep, fp = CONFIG.buildings.footprint;
-    const kx = k.x + k.w / 2, ky = k.y + k.h / 2;
-    return Math.hypot(tx + fp / 2 - kx, ty + fp / 2 - ky) <= this.keep.buildRadius;
-  }
-
+  // Placement rules that don't depend on the route (cheap: the ghost and build grid call this every frame).
   check(type, tx, ty) {
-    const p = this.scene.pathing, m = CONFIG.map, def = CONFIG.buildings[type], k = m.keep;
+    const p = this.scene.pathing, m = CONFIG.map, def = CONFIG.buildings[type], k = m.keep, T = CONFIG.TILE;
     const fp = CONFIG.buildings.footprint;
-    let oob = false, occupied = false, blocked = false, nearKeep = false;
+    let oob = false, occupied = false, terrain = false, nearKeep = false;
     p.forEachFootprint(tx, ty, fp, (x, y) => {
       if (!p.inBounds(x, y)) { oob = true; return; }
       if (p.buildingAt(x, y) || p.tileType(x, y) === TILE_T.KEEP) occupied = true;
-      if (p.tileType(x, y) !== TILE_T.TERRAIN) blocked = true;
-      // stay off the Keep's walls
+      else if (!p.isBuildable(x, y)) terrain = true;
       if (x >= k.x - 1 && x <= k.x + k.w && y >= k.y - 1 && y <= k.y + k.h) nearKeep = true;
     });
     if (oob) return { ok: false, reason: 'Out of bounds' };
     if (!this.isUnlocked(type)) return { ok: false, reason: 'Requires Keep tier ' + def.tier };
     if (occupied) return { ok: false, reason: 'Occupied' };
-    if (!this.inBuildRadius(tx, ty)) return { ok: false, reason: 'Outside build area (upgrade the Keep)' };
-    if (blocked) return { ok: false, reason: 'Buildings go next to lanes, not on them' };
-    const a = m.towerAdjacency;
-    let near = false;
-    p.forEachFootprint(tx, ty, fp, (x, y) => {
-      if (near) return;
-      for (let yy = y - a; yy <= y + a && !near; yy++)
-        for (let xx = x - a; xx <= x + a; xx++) if (p.isLane(xx, yy)) { near = true; break; }
-    });
-    if (!near) return { ok: false, reason: 'Must be next to a lane' };
+    if (terrain) return { ok: false, reason: 'Build on grass or dirt' };
     if (nearKeep) return { ok: false, reason: 'Too close to the Keep' };
+    const cx = tx + fp / 2, cy = ty + fp / 2;
+    if (this.scene.towers.some(t => t.alive && Math.abs(t.x / T - cx) < fp && Math.abs(t.y / T - cy) < fp)) return { ok: false, reason: 'Occupied' };
+    if (m.spawns.some(s => Math.hypot(s.x - cx, s.y - cy) < m.spawnClear)) return { ok: false, reason: 'Too close to an enemy spawn' };
+    if (m.camps.some(s => Math.hypot(s.x - cx, s.y - cy) < m.campClear)) return { ok: false, reason: 'Too close to a camp' };
     if (!this.scene.economy.canAfford(def.cost)) return { ok: false, reason: 'Not enough gold', gold: true };
     return { ok: true };
+  }
+
+  // check + the route rule: enemies must still reach the Keep from every spawn.
+  checkPlace(type, tx, ty) {
+    const c = this.check(type, tx, ty);
+    if (!c.ok) return c;
+    if (this.scene.pathing.wouldDisconnect(tx, ty, CONFIG.buildings.footprint)) return { ok: false, reason: 'Would block every path to the Keep' };
+    return c;
   }
 
   startPlacing(type) {
@@ -69,7 +66,7 @@ class BuildSystem {
     if (!this.placing) return false;
     const p = this.scene.pathing;
     const tx = p.tileOf(wx), ty = p.tileOf(wy);
-    const c = this.check(this.placing, tx, ty);
+    const c = this.checkPlace(this.placing, tx, ty);
     if (!c.ok) {
       Sfx.play('error'); this.scene.events.emit('notice', c.reason);
       return false;
@@ -114,10 +111,6 @@ class BuildSystem {
     if (!this.placing) return;
     const p = this.scene.pathing, def = CONFIG.buildings[this.placing];
     const fp = CONFIG.buildings.footprint, s = CONFIG.px(fp);
-    const k = CONFIG.map.keep;
-    // build area
-    g.lineStyle(2, 0xffd23f, 0.25);
-    g.strokeCircle(CONFIG.px(k.x + k.w / 2), CONFIG.px(k.y + k.h / 2), CONFIG.px(this.keep.buildRadius));
     const tx = p.tileOf(wx), ty = p.tileOf(wy);
     const c = this.check(this.placing, tx, ty);
     const col = c.ok ? 0x44ff66 : 0xff4444;

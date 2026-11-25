@@ -3,40 +3,110 @@
 
 const CONFIG = {
   TILE: 32,
-  MAP_W: 96,          // tiles
-  MAP_H: 45,          // tiles
   VIEW_W: 1280,
   VIEW_H: 720,
 
-  camera: {             // locked on the hero; hold Space to look around
-    edgeSize: 14,       // px from the screen edge that triggers edge pan (Space held)
+  camera: {             // free camera; hold Space to follow the hero
+    edgeSize: 14,       // px from the screen edge that triggers edge pan
     edgeSpeed: 1100,    // px/s
     smoothing: 16,      // higher = snappier camera follow
   },
 
   // ---------------------------------------------------------------- MAP
-  // Rectangles are in tiles.
+  // Generated from docs/map-sketch.png by tools/sketch2map.mjs (one char per 32px tile):
+  //   '.' grass   ':' dirt   '=' bridge   '~' river   '#' rock   'T' trees
+  // Grass, dirt and bridges are walkable. Rocks, trees and the river block everything.
+  // Buildings go on grass or dirt. Marker positions below are in tiles (centres).
   map: {
-    keep: { x: 2, y: 20, w: 5, h: 5 },
-    paths: [
-      { x: 28, y: 7, w: 68, h: 3 },   // top lane
-      { x: 28, y: 21, w: 68, h: 3 },  // mid lane
-      { x: 28, y: 35, w: 68, h: 3 },  // bottom lane
-      { x: 7, y: 6, w: 21, h: 33 },   // plaza in front of the Keep, joining the lanes
+    grid: [
+      '##########TT##############TTTT##===============......######################:::::::::################TTTTTTTTTTTTTTTT####',
+      '##########TTT############TTTTT::================:::::...###################::::::::::#############...TTTTTTTTTTTTTTT####',
+      '###:######TTTTTT########TTT:::::=======:========:::::::::::################::::::::::##########......TTTTTTTTTTTTTTT####',
+      '##::::###TTTTTTT.#######TT::::::================:::::::::::::......########::::::::::######...........TTTTTTTTT.:::::###',
+      '##::::::.TTTTTTT..#####TT:::::::================::::::::::::::::...........::::::::::...........................::::::##',
+      '##::::::.TTTTTTT..#####TT::::::TTTTTT~~~~~~~~~........:::::::::::::.........:::::::............::::::::::::::::::::::::#',
+      '##:::::::TTTTTTT..#####T:::::::TTTTTT~~~~~~~~~...........:::::::::::::........:::.............:::::::::::::::::::::::::#',
+      '##:::::::###TTTT..#####T:::::::TTTTTT~~~~~~~~~~............:::::::::::::.....::::............:::::::::::::::::::::::::##',
+      '###:.::::###TTTT..#####:::::::TTTTTTT~~~~~~~~~~...TTT......::::::::::::::::::::::...........::::::::::::::::::::::::::##',
+      '#####::::###TTTT.######::::::.TTTTTT~~~~~~~~~~~~..TTTT....::::::.::::::::::::::::..........:::::::::............::::::##',
+      '#####::::###TTT.#######::::::.TTTTTT~~~~~~~~~~~~~.TTTTTT.::::::.....:::::::::::::..........::::::.....TTTTTTTT..:::::###',
+      '#####::::###...########::::::.TTTTTTT~~~~~~~~~~~~.TTTTTT.:::::..........:::::::::.........::::::......TTTTTTTTT......###',
+      'TTT..#:::###..########T::::::.TTTTTTTT~~~~~~~~~~~~TTTTTT.:::::.............:::::::.......::::::.......TTTTTTTTTT.....###',
+      'TTTT.###:::..########TT:::::..TTTTTTTT~~~~~~~~~~~~.......::::...............:::::::......:::::........TTTTTTTTTTTT...###',
+      'TTTT####::::.########TT:::::...TTTTTTTT~~~~~~~~~~~.......:::.................::::::::..:::::::..........TTTTTTTTTT.TTTTT',
+      'TTTTT###:::::########TT:::::...TTTTTTTT.~~~~~~~~~~~.....::::...................::::::::::::::...........TTTTTTTTTTTTTTTT',
+      'TTTTTT..:::::########TTT:::::::TTTTTTTT.~~~~~~~~~~~~....::::.....TTTTTT.........::::::::::::.............TTTTTTTTTTTTTTT',
+      '.TTTTT...::::#####::#TTT:::::::TTTTTTTTT.~~~~~~~~~~~....::::.....TTTTTTT.........::::::::::...............TTTTTTTTTTT###',
+      '####.....::::###::::###::::::::::TTTTTTT.~~~~~~~~~~~....::::.....T:::::T...........:::::::..TTTTTTTTTT.......TTTTTTTT###',
+      '#####....::::###::::::::::::::::::TTTTTTT~~~~~~~~~~~...::::......T:::::T............:::::::TTTTTTTTTTTTT.............###',
+      '######..:::::::::::::::::::::::::::TTTTTT~~~~~~~~~~~..:::::......T:::::T............::::::::TTTT:::::::::............###',
+      '##########::::::::::::::::::::::::::TTTTTT~~~~~~~~~~~.:::::......T:::::T...........:::::::::::::::::::::::...........###',
+      '##########:::::::###::::::::::###::::TTTTT~~~~~~~~~~~:::::........:::::T...........:::::::::::::::::::::::..........####',
+      '##########:::::::###::::::::::####::#TTTTT~~~~~~~~~~::::::........::::.............:::::T:::::::::::::::::..........####',
+      '##########:::::::####:::::::::########TTTT~~~~~~~~~::::::........:::::.............::::.TTT:::::::::::::::........######',
+      '########:::::::::##TTT::::::::########TTTTTT~~~~~~~:::::.........:::::............:::::.TTTTTTTT::::::::::........######',
+      '##::####:::###:::##TTT::::::::::######TTTT=========:::::.........::::.............::::..TTTTTTTTT:::::::::........######',
+      '##:::###:::###:::##TTT::::::::::::::::TT===========::::::::::::::::::.............::::..TTTTTTTTT::::::::.........######',
+      '##:::###:::###:::#TTTT::::::::::::::::::=====:=====:::::::::::::::::.............:::::............::::::........:::::###',
+      '##:::###::####:::TTTTT::::::::::::::::::=====:=====:::::::::::::::::.....TTTT....:::::.........................::::::###',
+      '##::::::::###::::TTTTT::::::::::::::::::===========:::...:::::::::::.....TTTT....::::..........:::::::::::::::::::::::##',
+      '##::::::::###::::TTT::::::::::::::::::::==========::::.........:::::.....TTTT...:::::.........::::::::::::::::::::::::##',
+      '##:::::::####::::::::::::::::::::::::::::TTTT~~~~~::::...TTT....:::::.....TT....::::.........:::::::::::::::::::::::::##',
+      '#####...###::::::::::::::::::::::::::::TTTTT~~~~~~::::...TTT....:::::...........::::........:::::::::::::::....:::::::##',
+      '###########::::::::::::::::::::::::::::TTTTT~~~~~~.::::..TTT.....:::::.........:::::.......:::::::.............:::::::##',
+      '###########::::::::::::::::::::::::::::TTTTT~~~~~~~::::..TTT.....:::::.........:::::......:::::::..............::::::###',
+      '#########:::::::::::::::::::::::::::::TTTTTT~~~~~~~::::...........:::::.TTTT..:::::.......::::::.................::::###',
+      '#########:::::::::::::::::::::::::::::TTTTTT~~~~~~~::::...........:::::.TTTT..:::::......::::::.....................####',
+      '##########::::::::::::::####:::::::::TTTTTTT~~~~~~~::::............::::.TTTT.:::::.......:::::.....................#####',
+      '##############::::::::::####:::::::::TTTTTTT~~~~~~~::::............::::......:::::.......:::::.....................#####',
+      '##############::::::::::#####:::::::TTTTTTT~~~~~~~~::::............::::......::::.......:::::.......TTTTTTTTTT.....####.',
+      '###TTTT.::####::::::::::#####:::::TTTTTTTT~~~~~~~~~::::............:::::.....::::......:::::......TTTTTTTTTTTTT....##TTT',
+      '##TTTT:::::::::::::::::::####::::TTTTTTTT.~~~~~~~~.:::.....TTTTT....::::.....::::......:::::::::..TTTTTTTTTTTTT....TTTTT',
+      '##TTTT:::::::::::::::::::####TTTTTTTTTTT..~~~~~~~~.:::.....TTTTTT..::::::....::::...::::::::::::::::TTTTTTTTTTTT..TTTTTT',
+      '#TTTT:::::::#:TTT:::::::::###TTTTTTTTTT..~~~~~~~~~.:::....TTTTTTTT.:::::::...:::::::::::::::::::::::::TTTTTTTTTTTTTTTTTT',
+      'TTTT::::::####TTT::..::::###TTTTTTTTTT...~~~~~~~~~.::::...TTTTTTTT::::::::::::::::::::::::.::::::::::::::::TTTTTTTTTTTTT',
+      'TTT:::::######TTT##T.:::..##TTTTTTTTT...~~~~~~~~~~.::::...TTTTTTT:::::::::::::::::::::::.......T:::::::::::TTTTTTTTTTTTT',
+      'TTT::#########TTTTTTT:::..TTTTTTTTT....~~~~~~~~~~~.::::...TTT:::::::::::::::::::::::...........TTT:::::::::TTTTTTTTTTTTT',
+      '##:::############TTTT:::..TTTTTTT......~~~~~~~~~~~.::::...TT::::::::::.:::::.:::::............TTTTT::::::::TTTTTTTTTTTTT',
+      '##:::############TTTT:::..TTTTTTT......~~~~~~~~~~..::::...TT:::::::::.........::::............TTTTTT:::::::TTTTTTTTTTTTT',
+      '##:::..###########TTT:::..TTTTTTT.....~~~~~~~~~~~..::::...TT:::::::T..........:::::...........TTTTTT:::::::TTTTTTTTTTTTT',
+      '##:::..###########TTT:::..TTTTTTT.....~~~~~~~~~~...::::...TT:::::::T..........:::::...........TTTTTTT:::::TTTTTT.....###',
+      '##::::.###########TTT:::..TTTTTTT....~~~~~~~~~~~...::::...TTT:::::TT...........:::::..........TTTTTTTT:::TTTTTT......###',
+      '##::::.###########TTT:::..TTTTTTTT...~~~~~~~~~~....::::...TTTTTTTTTT...........:::::..........TTTTTTTTTTTTTTTT.......###',
+      '###:::.###########TTT::::.TTTTTTTT...~~~~~~~~~~....::::....TTTTTTTTT............:::::.........TTTTTTTTTTTTTTT........###',
+      '###::::.##########TTT::::..TTTTTTT...~~~~~~~~~....:::::....TTTTTTTT.............:::::.........TTTTTTTTTTTTT..........###',
+      '###:::::.######...TTTT:::..TTTTTTT...~~~~~~~~~...::::::.....TTTTTTT..............:::::..........TTTTTT................##',
+      '##TTT:::TTTT###...TTTT::::.TTTTTTT...~~~~~~~~..:::::::.......TTTTT...............:::::..........................:::::::#',
+      'TTTTTT::TTTT####..TTTTT:::..TTTTTT...~~~~~~~~:::::::::............................::::..........................::::::::',
+      'TTTTTT::TTTT#####.TTTTT::::..TTTTTTTTT~~~~=====::::::..........................:::::::::::::::::::::::::::::::::::::::::',
+      'TTTTTT::TTTT#######.TT::::::::TTT==============::::.......................::::::::::::::::::::::::::::::::::::::::::::::',
+      '#.:::::::..#########...::::::::::==============::::::...............:::::::::::::::::::::::::::::::::::::::::::::::::::#',
+      '#::::::::.############.::::::::::======::======::::::::::::::::::::::::::::::::::::::::.::::::::::::::::...::::::::::::#',
+      '#:::::::.################::::::::=============:::::::::::::::::::::::::::::::::.................######..........::::::##',
+      ':::::::..###################......===========~...:::::::::##############:#........###########################...:::::###',
+      ':::::::.###########################TTT~~~~~~~~##########################################################################',
+      '#:::::#############################TTT~~~~~~~~##########################################################################',
+      '####################################~~~~~~~~~~##########################################################################',
     ],
-    connectors: [                     // always open, never buildable
-      { x: 50, y: 10, w: 3, h: 11 }, { x: 50, y: 24, w: 3, h: 11 },
-      { x: 74, y: 10, w: 3, h: 11 }, { x: 74, y: 24, w: 3, h: 11 },
+    keep: { x: 22, y: 27, w: 5, h: 5 },
+    spawns: [                       // enemy spawns, one per lane
+      { name: 'TOP', x: 115.5, y: 6.5 },
+      { name: 'MID', x: 114.5, y: 32 },
+      { name: 'BOT', x: 115.5, y: 60.5 },
     ],
-    spawnZoneX: 90,       // lane tiles with x >= this are not buildable
-    towerAdjacency: 2,    // towers must be within this many tiles of a lane
-    lanes: [              // tile coordinates
-      { id: 0, name: 'TOP', spawn: { x: 94.5, y: 8.5 },  post: { x: 30.5, y: 8.5 } },
-      { id: 1, name: 'MID', spawn: { x: 94.5, y: 22.5 }, post: { x: 30.5, y: 22.5 } },
-      { id: 2, name: 'BOT', spawn: { x: 94.5, y: 36.5 }, post: { x: 30.5, y: 36.5 } },
+    towers: [                       // allied lane towers, per lane ordered from the Keep outward. Creeps spawn at the first one.
+      [{ x: 24, y: 23.5 }, { x: 26, y: 9 }, { x: 39.5, y: 2.5 }],
+      [{ x: 29.5, y: 29.5 }, { x: 45.5, y: 28.5 }],
+      [{ x: 24, y: 36 }, { x: 24, y: 57.5 }, { x: 40, y: 62.5 }],
     ],
-    laneSplitTop: 14,     // tile y below which a unit counts as "top lane"
-    laneSplitBot: 30,     // tile y above which a unit counts as "bottom lane"
+    camps: [                        // neutral camps
+      { x: 4.5, y: 6, kind: 'weak' }, { x: 3.5, y: 31, kind: 'weak' }, { x: 3, y: 63.5, kind: 'weak' },
+      { x: 79.5, y: 2, kind: 'strong' }, { x: 69, y: 20, kind: 'strong' }, { x: 101, y: 24, kind: 'strong' },
+      { x: 63.5, y: 49.5, kind: 'strong' }, { x: 103.5, y: 49, kind: 'strong' },
+    ],
+    grassCost: 3,                   // flow-field cost of a grass tile (dirt/bridge = 1): waves keep to the lanes
+    spawnClear: 4,                  // no building within this many tiles of an enemy spawn
+    campClear: 3,                   // ...or of a camp centre
   },
 
   // ---------------------------------------------------------------- DIFFICULTY
@@ -47,37 +117,40 @@ const CONFIG = {
   },
 
   // ---------------------------------------------------------------- WAVES
+  // A wave tick every `interval` s (the first after `firstDelay`): enemies spawn at every enemy spawn,
+  // creeps at every lane whose first tower stands, cleared neutral camps refill, and gold is paid out.
   waves: {
-    baseCount: 21,
-    countPerWave: 7.8,
+    firstDelay: 30,
+    interval: 60,
+    baseCount: 15,             // enemies in wave 1 (all spawns together)
+    countPerWave: 5,           // + this many per wave after
     hpLinear: 0.12,            // hp mul = (1 + hpLinear*e) * hpExp^e, e = (wave-1) * scaling
-    hpExp: 1.075,
-    dmgPerWave: 0.07,
+    hpExp: 1.115,
+    dmgPerWave: 0.10,
     speedPerWave: 0.012,
     speedCap: 1.35,
     bossEvery: 5,
+    bossGrowEvery: 15,         // one more boss per boss wave every this many waves
+    bossReplaces: 10,          // regular enemies removed from the wave per boss
     unlocks: { grunt: 1, runner: 2, brute: 3, archer: 4, sapper: 6, shaman: 8 },
     weights: { grunt: 10, runner: 5, brute: 3, archer: 4, sapper: 2, shaman: 1.5 },
-    spawnInterval: 0.3,        // seconds between spawns in one lane
-    groupSize: [9, 18],        // spawns come in groups
-    groupPause: 2.2,           // pause between groups
-    clearGoldBase: 40,
-    clearGoldPerWave: 8,
-    clearXpBase: 40,
-    clearXpPerWave: 14,
+    spawnInterval: 0.35,       // seconds between spawns at one spawn point
+    tickGoldBase: 60,          // gold paid every wave tick...
+    tickGoldPerWave: 8,        // ...growing per wave
     goldPerWaveScaling: 0.05,  // enemy gold bounty grows by this per wave
+    xpPerWaveScaling: 0.06,    // enemy xp grows by this per wave
   },
 
   // ---------------------------------------------------------------- ENEMIES
   enemies: {
-    grunt:  { name: 'Grunt',  shape: 'circle',   color: 0xd94040, radius: 11, hp: 35,   speed: 138, damage: 3,  range: 22,  rate: 1.0, armor: 0, aggro: 160, gold: 2,   xp: 4 },
-    runner: { name: 'Runner', shape: 'triangle', color: 0xff5a5a, radius: 9,  hp: 20,   speed: 233, damage: 2,  range: 20,  rate: 1.4, armor: 0, aggro: 140, gold: 1,   xp: 3 },
-    brute:  { name: 'Brute',  shape: 'square',   color: 0x8b1a1a, radius: 16, hp: 140,  speed: 87,  damage: 9,  range: 24,  rate: 0.7, armor: 6, aggro: 150, gold: 5,   xp: 10 },
-    archer: { name: 'Archer', shape: 'diamond',  color: 0xe0505a, radius: 10, hp: 28,   speed: 126, damage: 3,  range: 220, rate: 0.8, armor: 0, aggro: 240, gold: 2,   xp: 5, ranged: true, projSpeed: 520 },
-    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 48,   speed: 129, damage: 4,  range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 3,   xp: 6, structureMul: 4, keepBreaker: true },   // ignores hero/allies, rushes the Keep
-    shaman: { name: 'Shaman', shape: 'circle',   color: 0x9b4dca, radius: 12, hp: 60,   speed: 105, damage: 3,  range: 180, rate: 0.7, armor: 1, aggro: 200, gold: 4,   xp: 8, ranged: true, projSpeed: 420,
+    grunt:  { name: 'Grunt',  shape: 'circle',   color: 0xd94040, radius: 11, hp: 35,   speed: 138, damage: 3,  range: 22,  rate: 1.0, armor: 0, aggro: 160, gold: 2,   xp: 8 },
+    runner: { name: 'Runner', shape: 'triangle', color: 0xff5a5a, radius: 9,  hp: 20,   speed: 233, damage: 2,  range: 20,  rate: 1.4, armor: 0, aggro: 140, gold: 1,   xp: 6 },
+    brute:  { name: 'Brute',  shape: 'square',   color: 0x8b1a1a, radius: 16, hp: 140,  speed: 87,  damage: 9,  range: 24,  rate: 0.7, armor: 6, aggro: 150, gold: 5,   xp: 20 },
+    archer: { name: 'Archer', shape: 'diamond',  color: 0xe0505a, radius: 10, hp: 28,   speed: 126, damage: 3,  range: 220, rate: 0.8, armor: 0, aggro: 240, gold: 2,   xp: 10, ranged: true, projSpeed: 520 },
+    sapper: { name: 'Sapper', shape: 'square',   color: 0xe0802a, radius: 11, hp: 48,   speed: 129, damage: 4,  range: 24,  rate: 1.0, armor: 2, aggro: 120, gold: 3,   xp: 12, structureMul: 4, structureBreaker: 520 },   // ignores hero/creeps, rushes structures within this range (else the Keep)
+    shaman: { name: 'Shaman', shape: 'circle',   color: 0x9b4dca, radius: 12, hp: 60,   speed: 105, damage: 3,  range: 180, rate: 0.7, armor: 1, aggro: 200, gold: 4,   xp: 16, ranged: true, projSpeed: 420,
               healEvery: 2.5, healRadius: 170, healPct: 0.08, hasteMul: 1.25, hasteTime: 3 },
-    boss:   { name: 'Boss',   shape: 'hexagon',  color: 0xc81e1e, radius: 30, hp: 2600, speed: 69,  damage: 55, range: 30,  rate: 0.6, armor: 8, aggro: 200, gold: 150, xp: 300,
+    boss:   { name: 'Boss',   shape: 'hexagon',  color: 0xc81e1e, radius: 30, hp: 2600, speed: 82,  damage: 55, range: 30,  rate: 0.6, armor: 8, aggro: 200, gold: 150, xp: 400,
               structureMul: 2, slamEvery: 6.5, slamRadius: 160, slamDamage: 110, slamWindup: 1.0, slamStun: 0.8 },
   },
 
@@ -151,37 +224,51 @@ const CONFIG = {
     xpGrowth: 1.15,                 // past the table, each level needs this × the previous
   },
 
-  // ---------------------------------------------------------------- KEEP & ALLIES
+  // ---------------------------------------------------------------- KEEP, TOWERS & CREEPS
+  // Keep tiers make the lane towers and creeps stronger (tierScaling per tier above 1).
   keep: {
     tiers: [
-      { cost: 0,   hp: 1600, spawnEvery: 8,   maxAllies: 4,  attack: null,                                    archers: false, buildRadius: 40, repair: 0 },
-      { cost: 300, hp: 2400, spawnEvery: 7.5, maxAllies: 6,  attack: { damage: 66, range: 1080, rate: 1.0, shots: 1 }, archers: false, buildRadius: 52, repair: 0 },
-      { cost: 550, hp: 3400, spawnEvery: 7,   maxAllies: 8,  attack: { damage: 90, range: 1140, rate: 1.2, shots: 1 }, archers: true,  buildRadius: 68, repair: 0 },
-      { cost: 900, hp: 4800, spawnEvery: 6,   maxAllies: 10, attack: { damage: 144, range: 1260, rate: 1.5, shots: 2 }, archers: true,  buildRadius: 99, repair: 10 },
+      { cost: 0,   hp: 1600, attack: null,                                         repair: 0 },
+      { cost: 300, hp: 2400, attack: { damage: 66, range: 1080, rate: 1.0, shots: 1 },  repair: 0 },
+      { cost: 550, hp: 3400, attack: { damage: 90, range: 1140, rate: 1.2, shots: 1 },  repair: 0 },
+      { cost: 900, hp: 4800, attack: { damage: 144, range: 1260, rate: 1.5, shots: 2 }, repair: 10 },
     ],
-    archerEvery: 3,     // every Nth spawn is an archer (tier 3+)
-    allyTierScaling: 0.18,
+    tierScaling: 0.15,   // tower and creep hp/damage per Keep tier above 1
+    repairRadius: 1200,  // a repairing Keep also repairs structures this close (px), same HP/s
   },
-  allies: {
-    soldier: { name: 'Soldier', shape: 'circle',  color: 0x4a8fe0, radius: 10, hp: 190, damage: 14, range: 22,  rate: 1.0, armor: 3, speed: 125, aggro: 230 },
-    archer:  { name: 'Archer',  shape: 'diamond', color: 0x6fb6ff, radius: 9,  hp: 110, damage: 13, range: 210, rate: 0.9, armor: 1, speed: 125, aggro: 260, ranged: true, projSpeed: 600 },
-    leash: 380,          // how far from their post allies will chase
+  tower: {               // allied lane tower (fixed on the map; destroyed for good)
+    hp: 1400, armor: 6, range: 260, damage: 30, rate: 1.0, projSpeed: 750,
+  },
+  allies: {              // lane creeps: spawned at a lane's first tower every wave tick, push toward the enemy spawn
+    perLane: 5,
+    archersPerLane: [1, 1, 2, 2],   // archers among them, by Keep tier
+    soldier: { name: 'Soldier', shape: 'circle',  color: 0x4a8fe0, radius: 10, hp: 160, damage: 11, range: 22,  rate: 1.0, armor: 3, speed: 110, aggro: 230 },
+    archer:  { name: 'Archer',  shape: 'diamond', color: 0x6fb6ff, radius: 9,  hp: 90,  damage: 10, range: 210, rate: 0.9, armor: 1, speed: 110, aggro: 260, ranged: true, projSpeed: 600 },
+  },
+
+  // ---------------------------------------------------------------- NEUTRALS
+  // Camps of neutral monsters. They fight back only when the hero hits them; only the hero can damage them.
+  // A cleared camp refills on the next wave tick. Stats scale with the current wave like enemies.
+  neutrals: {
+    perCamp: 3,
+    leash: 320,          // px from the camp before they give up and walk home (healing)
+    weak:   { name: 'Wolf',  shape: 'circle',  color: 0x5fb3a8, radius: 12, hp: 160, speed: 150, damage: 10, range: 24, rate: 1.0, armor: 2, gold: 12, xp: 25 },
+    strong: { name: 'Golem', shape: 'hexagon', color: 0x3f8f86, radius: 16, hp: 420, speed: 120, damage: 22, range: 28, rate: 0.8, armor: 6, gold: 30, xp: 60 },
   },
 
   // ---------------------------------------------------------------- BUILDINGS
   buildings: {
-    footprint: 2,   // each building occupies footprint x footprint tiles (top-left = placement tile)
-    arrow:  { name: 'Arrow Tower', key: '1', cost: 100, color: 0x5a6270, core: 0xffffff, tier: 1,
+    footprint: 2,   // each building occupies footprint x footprint tiles (top-left = placement tile). Buildings block movement and can be destroyed.
+    arrow:  { name: 'Arrow Tower', key: '1', cost: 100, color: 0x5a6270, core: 0xffffff, tier: 1, hp: 700,
               range: 230, damage: 18, rate: 1.6, projSpeed: 750, desc: 'Fast single-target arrows.' },
-    cannon: { name: 'Cannon',      key: '2', cost: 175, color: 0x5a6270, core: 0xff9a3c, tier: 2,
+    cannon: { name: 'Cannon',      key: '2', cost: 175, color: 0x5a6270, core: 0xff9a3c, tier: 2, hp: 900,
               range: 260, damage: 48, rate: 0.45, aoe: 70, projSpeed: 480, desc: 'Slow, heavy AoE shots.' },
-    frost:  { name: 'Frost Tower', key: '3', cost: 150, color: 0x5a6270, core: 0x5ee0ff, tier: 3,
+    frost:  { name: 'Frost Tower', key: '3', cost: 150, color: 0x5a6270, core: 0x5ee0ff, tier: 3, hp: 700,
               range: 200, damage: 9, rate: 1.0, aoe: 55, slow: 0.55, slowTime: 1.5, projSpeed: 620, desc: 'Slows enemies in a small area.' },
-    barracks: { name: 'Barracks',  key: '4', cost: 200, color: 0x2f5fa8, core: null,     tier: 2,
-              allyCap: [2, 3, 4], spawnMul: [0.85, 0.75, 0.65], desc: '+Ally cap and faster ally spawns.' },
-    mine:   { name: 'Gold Mine',   key: '5', cost: 150, color: 0xd8b21c, core: null,     tier: 3,
-              income: [25, 45, 70], desc: 'Gold every time a wave is cleared.' },
-    levelMul: { damage: [1, 1.6, 2.4], range: [0, 20, 40], rate: [1, 1.1, 1.2] },
+    mine:   { name: 'Gold Mine',   key: '4', cost: 150, color: 0xd8b21c, core: null,     tier: 3, hp: 400,
+              income: [25, 45, 70], desc: 'Gold every wave tick.' },
+    levelMul: { damage: [1, 1.6, 2.4], range: [0, 20, 40], rate: [1, 1.1, 1.2], hp: [1, 1.5, 2.2] },
+    armor: 4,
     upgradeCostMul: [0.8, 1.2],   // cost of level 2, level 3 (× base cost)
     level3KeepTier: 4,
     sellRefund: 0.5,
@@ -230,9 +317,8 @@ const CONFIG = {
     frameBudgetMs: 14,       // real ms per frame spent stepping the simulation (at 60 fps)
     maxFrameBudgetMs: 200,   // when frames are throttled (background tab), step up to this long per frame
     defaultSeeds: 3,
-    defaultWaveCap: 40,
+    defaultWaveCap: 30,      // waves are one minute apart: the cap is roughly minutes survived
     baseSeed: 1000,          // seed index i uses baseSeed + i (same seeds for every combination)
-    waveTimeout: 300,        // s of game time; a wave lasting longer ends the run as 'stalled'
     storageKey: 'cd_sim_last',
 
     bot: {
@@ -240,7 +326,6 @@ const CONFIG = {
       skillEvery: 0.1,       // s between skill checks
       retreatHp: 0.3,        // fall back to the Keep below this HP fraction...
       resumeHp: 0.65,        // ...and return to the fight above this one
-      buildWait: 5,          // s the bot spends in each build phase before starting the next wave
       warrior: {
         dashMinDist: 120,      // Dash toward the focus enemy when it is farther than this...
         dashCluster: 3,        // ...or through a cluster this big
@@ -261,12 +346,12 @@ const CONFIG = {
 
     // Spending policies. The bot runs `opening` once, then repeats `loop`, saving up for each step.
     // Steps: 'keep' | 'arrow' | 'cannon' | 'frost' (upgrade an existing one of that type if possible, else build)
-    //        | 'barracks' | 'mine' (build, else upgrade). Locked / impossible steps are skipped.
+    //        | 'mine' (build, else upgrade). Locked / impossible steps are skipped.
     strategies: {
       carry:    { label: 'Hero only',  hero: 'active', opening: [], loop: [] },
       turtle:   { label: 'Turtle',     hero: 'active', opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow'] },
       economy:  { label: 'Economy',    hero: 'active', opening: ['arrow', 'keep', 'keep', 'mine', 'mine', 'mine'], loop: ['arrow', 'mine', 'cannon', 'keep', 'frost'] },
-      keepRush: { label: 'Keep rush',  hero: 'active', opening: ['keep', 'keep', 'keep', 'barracks', 'barracks'], loop: ['barracks', 'arrow', 'cannon'] },
+      keepRush: { label: 'Keep rush',  hero: 'active', opening: ['keep', 'keep', 'keep'], loop: ['arrow', 'cannon', 'arrow', 'frost'] },
       balanced: { label: 'Balanced',   hero: 'active', opening: ['arrow', 'keep', 'arrow'], loop: ['cannon', 'keep', 'arrow', 'frost'] },
       idle:     { label: 'Idle hero',  hero: 'idle',   opening: ['arrow', 'arrow', 'keep', 'cannon'], loop: ['arrow', 'cannon', 'keep', 'frost', 'cannon', 'arrow'] },
     },
@@ -286,5 +371,7 @@ const CONFIG = {
 
 // Convenience tile → pixel helpers
 CONFIG.px = (t) => t * CONFIG.TILE;
+CONFIG.MAP_W = CONFIG.map.grid[0].length;
+CONFIG.MAP_H = CONFIG.map.grid.length;
 CONFIG.WORLD_W = CONFIG.MAP_W * CONFIG.TILE;
 CONFIG.WORLD_H = CONFIG.MAP_H * CONFIG.TILE;

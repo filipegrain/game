@@ -1,8 +1,10 @@
-// Enemy unit: flow-field toward the Keep, aggro on hero/allies. Buildings are immune and ignored.
+// Enemy unit: flow-field toward the Keep, aggro on the hero, creeps and lane towers; attacks buildings that are
+// in the way. With `camp` set it is a neutral camp monster instead: idle until the hero hits it, then fights the
+// hero until leashed back to the camp.
 
 class Enemy extends Unit {
-  constructor(scene, type, x, y, mods) {
-    const d = CONFIG.enemies[type];
+  constructor(scene, type, x, y, mods, camp = null) {
+    const d = camp ? CONFIG.neutrals[type] : CONFIG.enemies[type];
     super(scene, x, y, {
       radius: d.radius, hp: Math.round(d.hp * mods.hp), armor: d.armor, team: 'enemy',
       color: d.color, shape: d.shape, depth: type === 'boss' ? 22 : 19,
@@ -24,6 +26,9 @@ class Enemy extends Unit {
     this.slam = null;
     this.isBoss = type === 'boss';
     if (this.isBoss) this.stunResist = 0.5;
+    this.progT = 1.5; this.lastFd = Infinity;
+    this.neutral = !!camp;
+    if (camp) { this.camp = camp; this.home = { x, y }; this.provoked = false; }
   }
 
   applyStun(t, freeze) { super.applyStun(this.isBoss ? t * 0.4 : t, freeze); }
@@ -34,31 +39,44 @@ class Enemy extends Unit {
     return true;
   }
 
+  // Nearest of: hero, creeps and lane towers within aggro; buildings next to us; the Keep in range.
+  // Structure breakers (Sapper) skip units and go for any tower or building within their breaker range.
   pickTarget() {
     const s = this.status, sc = this.scene;
     if (s.tauntT > 0 && s.tauntBy && s.tauntBy.alive) return s.tauntBy;
     const d = this.def;
-
-    // Keep-breakers (Sapper) ignore the hero and allies and rush the Keep
-    if (!d.keepBreaker) {
-      // hero / allies in aggro range
-      let best = null, bestD = d.aggro;
-      const h = sc.hero;
-      if (h && h.alive && !h.invulnerable) {
-        const dd = h.edgeDist(this.x, this.y);
-        if (dd < bestD) { bestD = dd; best = h; }
-      }
-      for (const a of sc.allies) {
-        if (!a.alive) continue;
-        const dd = a.edgeDist(this.x, this.y);
-        if (dd < bestD) { bestD = dd; best = a; }
-      }
-      if (best) return best;
+    let best = null, bestD = Infinity;
+    const consider = (t, maxD) => {
+      if (!t.alive || t.invulnerable) return;
+      const dd = t.edgeDist(this.x, this.y);
+      if (dd <= maxD && dd < bestD) { bestD = dd; best = t; }
+    };
+    const near = this.range + this.radius + 16;
+    if (d.structureBreaker) {
+      for (const t of sc.towers) consider(t, d.structureBreaker);
+      for (const b of sc.buildings) consider(b, d.structureBreaker);
+    } else {
+      consider(sc.hero, d.aggro);
+      for (const a of sc.allies) consider(a, d.aggro);
+      for (const t of sc.towers) consider(t, d.aggro);
+      for (const b of sc.buildings) consider(b, near);
     }
-
-    // the Keep if in range
+    if (best) return best;
     if (sc.keep.alive && sc.keep.edgeDist(this.x, this.y) - this.radius <= this.range + 6) return sc.keep;
-    return null;
+    // walled in: no flow progress lately → break the nearest building
+    if (this.stuck) for (const b of sc.buildings) consider(b, 160);
+    return best;
+  }
+
+  // Flow progress check: an enemy that made no progress toward the Keep for a while counts as stuck.
+  trackProgress(dt) {
+    this.progT -= dt;
+    if (this.progT > 0) return;
+    this.progT = 1.5;
+    const p = this.scene.pathing;
+    const fd = p.flowDistAt(this.x, this.y, this.viaBridge ? p.bridgeDist[this.lane] : p.dist);
+    this.stuck = !this.target && fd >= this.lastFd - 0.5;
+    this.lastFd = fd;
   }
 
   update(dt) {
@@ -71,8 +89,10 @@ class Enemy extends Unit {
     if (this.stunned) { this.vx = 0; this.vy = 0; this.syncGfx(); return; }
 
     if (this.slam) { this.updateSlam(dt); this.syncGfx(); return; }
+    if (this.neutral) { this.updateNeutral(dt); this.syncGfx(); return; }
     this.updateSpecial(dt);
     if (this.slam) { this.syncGfx(); return; }
+    this.trackProgress(dt);
 
     this.retargetT -= dt;
     if (this.retargetT <= 0 || !this.validTarget(this.target)) {
@@ -88,8 +108,10 @@ class Enemy extends Unit {
         this.vx = 0; this.vy = 0;
         this.facing = Math.atan2(t.y - this.y, t.x - this.x);
         if (this.atkCd <= 0) this.attack(t);
-      } else if (t.isStructure) {
+      } else if (t === this.scene.keep) {
         this.followFlow(sp, dt);
+      } else if (t.isStructure) {
+        this.navigateTo(t.x, t.y, sp, dt, 1500);
       } else {
         // chase a unit
         const p = this.scene.pathing;
@@ -102,9 +124,27 @@ class Enemy extends Unit {
     this.syncGfx();
   }
 
+  // Neutral: idle at the camp; once provoked, fight the hero until leashed, then walk home healing.
+  updateNeutral(dt) {
+    const h = this.scene.hero, sp = this.speed * this.speedMul;
+    const fromHome = Math.hypot(this.x - this.home.x, this.y - this.home.y);
+    if (this.provoked && (!h.alive || h.invulnerable || fromHome > CONFIG.neutrals.leash)) this.provoked = false;
+    if (this.provoked) {
+      const dist = h.edgeDist(this.x, this.y) - this.radius;
+      if (dist <= this.range) {
+        this.vx = 0; this.vy = 0;
+        this.facing = Math.atan2(h.y - this.y, h.x - this.x);
+        if (this.atkCd <= 0) this.attack(h);
+      } else this.navigateTo(h.x, h.y, sp, dt, 1500);
+      return;
+    }
+    if (fromHome > 8) { this.navigateTo(this.home.x, this.home.y, sp * 1.3, dt, 1500); this.heal(this.maxHp * 0.25 * dt); }
+    else { this.vx = 0; this.vy = 0; this.heal(this.maxHp * 0.1 * dt); }
+  }
+
   followFlow(sp, dt) {
     const p = this.scene.pathing;
-    const next = p.flowNext(this.x, this.y);
+    const next = this.lane != null ? p.laneNext(this, p.dist) : p.flowNext(this.x, this.y);
     if (!next) { this.vx = 0; this.vy = 0; return; }
     const T = CONFIG.TILE;
     const tx = next.tx * T + T / 2, ty = next.ty * T + T / 2;
@@ -141,8 +181,8 @@ class Enemy extends Unit {
       this.specialT -= dt;
       if (this.specialT <= 0) {
         const targets = Combat.playerUnitsInRadius(this.x, this.y, d.slamRadius * 0.9);
-        const keepNear = this.scene.keep.alive && this.scene.keep.edgeDist(this.x, this.y) <= d.slamRadius * 0.6;
-        if (targets.length || keepNear) {
+        const structNear = Combat.structuresInRadius(this.x, this.y, d.slamRadius * 0.6).length > 0;
+        if (targets.length || structNear) {
           this.specialT = d.slamEvery;
           this.slam = { t: d.slamWindup, x: this.x, y: this.y, g: this.scene.add.graphics().setDepth(8) };
           Sfx.play('boss');
@@ -153,7 +193,7 @@ class Enemy extends Unit {
       if (this.specialT <= 0) {
         this.specialT = d.healEvery;
         let any = false;
-        for (const e of Combat.enemiesInRadius(this.x, this.y, d.healRadius)) {
+        for (const e of Combat.enemiesInRadius(this.x, this.y, d.healRadius, true)) {
           if (e === this) continue;
           any = true;
           e.heal(e.maxHp * d.healPct);
@@ -182,9 +222,8 @@ class Enemy extends Unit {
         Combat.dealDamage(u, d.slamDamage * (this.damage / d.damage), { source: this, knock: { x: u.x - s.x, y: u.y - s.y, force: 380 } });
         if (u.alive) u.applyStun(d.slamStun);
       }
-      const k = this.scene.keep;
-      if (k.alive && k.edgeDist(s.x, s.y) <= d.slamRadius) {
-        Combat.dealDamage(k, d.slamDamage * (this.damage / d.damage), { source: this, structureMul: d.structureMul });
+      for (const st of Combat.structuresInRadius(s.x, s.y, d.slamRadius)) {
+        Combat.dealDamage(st, d.slamDamage * (this.damage / d.damage), { source: this, structureMul: d.structureMul });
       }
       Feel.ring(s.x, s.y, d.slamRadius, 0xff5030, { duration: 400, width: 6, fill: true });
       Feel.burst(s.x, s.y, 0x8b1a1a, 24);
@@ -196,6 +235,7 @@ class Enemy extends Unit {
 
   onDamaged(dmg, opts) {
     super.onDamaged(dmg, opts);
+    if (this.neutral && opts.source && opts.source.isHero) for (const m of this.camp.units) m.provoked = true;
     if (opts.source && opts.source.isHero) Sfx.play('enemyHit');
   }
 

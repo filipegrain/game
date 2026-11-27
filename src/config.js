@@ -21,11 +21,7 @@ const CONFIG = {
     campClear: 3,                   // ...or of a camp centre
   },
 
-  // ---------------------------------------------------------------- DIFFICULTY
-  difficulty: {
-    normal: { label: 'Normal', enemyMul: 1.0,  scaling: 1.0,  startGold: 300, scoreMul: 1.0 },
-    hard:   { label: 'Hard',   enemyMul: 1.3,  scaling: 1.3,  startGold: 200, scoreMul: 1.5 },
-  },
+  startGold: 200,
 
   // ---------------------------------------------------------------- WAVES
   // A wave tick every `interval` s (the first after `firstDelay`): enemies spawn at every enemy spawn,
@@ -35,7 +31,9 @@ const CONFIG = {
     interval: 60,
     baseCount: 15,             // enemies in wave 1 (all spawns together)
     countPerWave: 5,           // + this many per wave after
-    hpLinear: 0.12,            // hp mul = (1 + hpLinear*e) * hpExp^e, e = (wave-1) * scaling
+    enemyMul: 1.3,             // flat multiplier on enemy hp and damage
+    scaling: 1.3,              // how fast waves ramp: e = (wave-1) * scaling
+    hpLinear: 0.12,            // hp mul = enemyMul * (1 + hpLinear*e) * hpExp^e
     hpExp: 1.115,
     dmgPerWave: 0.10,
     speedPerWave: 0.012,
@@ -219,10 +217,10 @@ const CONFIG = {
     damageNumberPool: 70,
   },
 
-  score: { perWave: 100, perKill: 2, perLevel: 50, perSecond: 0.5 },
+  score: { perWave: 150, perKill: 3, perLevel: 75, perSecond: 0.75, bestKey: 'cd_best_hard' },   // key name kept so best scores from the old Hard mode carry over
 
   // ---------------------------------------------------------------- BALANCE SIMULATION
-  // Headless only (tools/simpar.mjs). A bot plays every selected hero × difficulty × strategy × seed in the real GameScene.
+  // Headless only (tools/simpar.mjs). A bot plays every selected hero × strategy × seed in the real GameScene.
   sim: {
     step: 1 / 30,            // fixed sim tick (s). Kept below the game's 0.05 clamp so Charge/skillshots don't tunnel.
     frameBudgetMs: 14,       // real ms per frame spent stepping the simulation (at 60 fps)
@@ -267,8 +265,8 @@ const CONFIG = {
 
     // Report flags
     flags: {
-      heroRatio: 1.3,          // one hero survives this × longer than the other (same difficulty)
-      strategyRatio: 1.5,      // best strategy vs median strategy (same hero + difficulty)
+      heroRatio: 1.3,          // one hero survives this × longer than the other
+      strategyRatio: 1.5,      // best strategy vs median strategy (same hero)
       idleShare: 0.85,         // idle hero reaches this fraction of the best active strategy → hero matters little
       towerValueRatio: 2,      // tower damage-per-gold this × above/below the median tower
       lowSkillShare: 0.04,     // a skill doing less than this share of hero damage

@@ -1,29 +1,26 @@
 // Balance simulation report: aggregates SimRecorder results, raises balance flags and renders Markdown.
 
 const SimReport = {
-  DIFFS: Object.keys(CONFIG.difficulty),
-
   mean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0; },
   median(a) { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; },
   sumInto(dst, src) { for (const k in src) dst[k] = (dst[k] || 0) + src[k]; return dst; },
   pct(x, total) { return total > 0 ? Math.round(x / total * 1000) / 10 : 0; },
   heroName(k) { return CONFIG.heroes[k] ? CONFIG.heroes[k].name : k; },
-  diffName(k) { return CONFIG.difficulty[k] ? CONFIG.difficulty[k].label : k; },
   stratName(k) { return CONFIG.sim.strategies[k] ? CONFIG.sim.strategies[k].label : k; },
 
   // ------------------------------------------------------------------ aggregate
   build(runs, settings, meta) {
     const combos = {};
     for (const r of runs) {
-      const key = r.hero + '|' + r.difficulty + '|' + r.strategy;
-      (combos[key] = combos[key] || { hero: r.hero, difficulty: r.difficulty, strategy: r.strategy, runs: [] }).runs.push(r);
+      const key = r.hero + '|' + r.strategy;
+      (combos[key] = combos[key] || { hero: r.hero, strategy: r.strategy, runs: [] }).runs.push(r);
     }
     const list = Object.values(combos).map(c => this.aggregate(c, settings));
     const report = {
       version: 1,
       generated: new Date().toISOString(),
       settings, meta: Object.assign({ completed: runs.length }, meta),
-      config: { difficulty: CONFIG.difficulty, waves: CONFIG.waves, heroes: CONFIG.heroes, skills: CONFIG.skills, buildings: CONFIG.buildings, items: CONFIG.items, keep: CONFIG.keep, sim: CONFIG.sim },
+      config: { startGold: CONFIG.startGold, waves: CONFIG.waves, heroes: CONFIG.heroes, skills: CONFIG.skills, buildings: CONFIG.buildings, items: CONFIG.items, keep: CONFIG.keep, sim: CONFIG.sim },
       combos: list,
       towerValue: this.towerValue(runs),
       skills: this.skillTable(runs),
@@ -55,7 +52,7 @@ const SimReport = {
     }
     for (const k in firstItem) firstItem[k] = Math.round(this.mean(firstItem[k]) * 10) / 10;
     return {
-      hero: c.hero, difficulty: c.difficulty, strategy: c.strategy, n: R.length,
+      hero: c.hero, strategy: c.strategy, n: R.length,
       waves: { mean: Math.round(this.mean(waves) * 10) / 10, min: Math.min(...waves), max: Math.max(...waves) },
       capped: R.filter(r => r.end === 'cap').length, stalled: R.filter(r => r.end === 'stalled').length,
       errors: R.filter(r => r.end === 'error').length, errorText: (R.find(r => r.error) || {}).error || '',
@@ -112,8 +109,8 @@ const SimReport = {
   // ------------------------------------------------------------------ flags
   flags(rep) {
     const F = CONFIG.sim.flags, flags = [], C = rep.combos;
-    const get = (h, d, s) => C.find(c => c.hero === h && c.difficulty === d && c.strategy === s);
-    const heroes = [...new Set(C.map(c => c.hero))], diffs = this.DIFFS.filter(d => C.some(c => c.difficulty === d));
+    const get = (h, s) => C.find(c => c.hero === h && c.strategy === s);
+    const heroes = [...new Set(C.map(c => c.hero))];
     const strats = [...new Set(C.map(c => c.strategy))];
     const active = strats.filter(s => CONFIG.sim.strategies[s].hero !== 'idle');
     const cap = rep.settings.waveCap;
@@ -121,33 +118,23 @@ const SimReport = {
 
     // hero vs hero
     if (heroes.length >= 2) {
-      for (const d of diffs) {
-        const avg = (h) => this.mean(active.map(s => get(h, d, s)).filter(Boolean).map(c => c.waves.mean));
-        const [a, b] = heroes, wa = avg(a), wb = avg(b);
-        if (!wa || !wb) continue;
+      const avg = (h) => this.mean(active.map(s => get(h, s)).filter(Boolean).map(c => c.waves.mean));
+      const [a, b] = heroes, wa = avg(a), wb = avg(b);
+      if (wa && wb) {
         const hi = wa >= wb ? a : b, ratio = Math.max(wa, wb) / Math.min(wa, wb);
-        if (ratio >= F.heroRatio) add('high', 'Heroes', `${this.diffName(d)}: ${this.heroName(hi)} survives ${ratio.toFixed(2)}× longer than ${this.heroName(hi === a ? b : a)} (avg ${Math.max(wa, wb).toFixed(1)} vs ${Math.min(wa, wb).toFixed(1)} waves over active strategies).`);
-      }
-    }
-    // difficulty ordering
-    for (const h of heroes) for (const s of strats) {
-      for (let i = 0; i + 1 < diffs.length; i++) {
-        const e = get(h, diffs[i], s), m = get(h, diffs[i + 1], s);
-        if (!e || !m) continue;
-        if (e.waves.mean >= cap && m.waves.mean >= cap) continue;
-        if (m.waves.mean >= e.waves.mean) add('high', 'Difficulty', `${this.heroName(h)} · ${this.stratName(s)}: ${this.diffName(diffs[i + 1])} (${m.waves.mean}) is not harder than ${this.diffName(diffs[i])} (${e.waves.mean}).`);
+        if (ratio >= F.heroRatio) add('high', 'Heroes', `${this.heroName(hi)} survives ${ratio.toFixed(2)}× longer than ${this.heroName(hi === a ? b : a)} (avg ${Math.max(wa, wb).toFixed(1)} vs ${Math.min(wa, wb).toFixed(1)} waves over active strategies).`);
       }
     }
     // strategy dominance / traps
-    for (const h of heroes) for (const d of diffs) {
-      const cs = active.map(s => get(h, d, s)).filter(Boolean);
+    for (const h of heroes) {
+      const cs = active.map(s => get(h, s)).filter(Boolean);
       if (cs.length < 3) continue;
       const med = this.median(cs.map(c => c.waves.mean));
       const best = cs.reduce((a, b) => b.waves.mean > a.waves.mean ? b : a), worst = cs.reduce((a, b) => b.waves.mean < a.waves.mean ? b : a);
-      if (med > 0 && best.waves.mean / med >= F.strategyRatio) add('medium', 'Strategies', `${this.heroName(h)} · ${this.diffName(d)}: ${this.stratName(best.strategy)} dominates (${best.waves.mean} waves vs median ${med}).`);
-      if (worst.waves.mean > 0 && med / worst.waves.mean >= F.strategyRatio) add('medium', 'Strategies', `${this.heroName(h)} · ${this.diffName(d)}: ${this.stratName(worst.strategy)} is a trap (${worst.waves.mean} waves vs median ${med}).`);
-      const idle = get(h, d, 'idle');
-      if (idle && best.waves.mean > 0 && idle.waves.mean / best.waves.mean >= F.idleShare) add('high', 'Heroes', `${this.heroName(h)} · ${this.diffName(d)}: an idle hero reaches ${idle.waves.mean} waves, ${Math.round(idle.waves.mean / best.waves.mean * 100)}% of the best active strategy (${best.waves.mean}). The hero matters little.`);
+      if (med > 0 && best.waves.mean / med >= F.strategyRatio) add('medium', 'Strategies', `${this.heroName(h)}: ${this.stratName(best.strategy)} dominates (${best.waves.mean} waves vs median ${med}).`);
+      if (worst.waves.mean > 0 && med / worst.waves.mean >= F.strategyRatio) add('medium', 'Strategies', `${this.heroName(h)}: ${this.stratName(worst.strategy)} is a trap (${worst.waves.mean} waves vs median ${med}).`);
+      const idle = get(h, 'idle');
+      if (idle && best.waves.mean > 0 && idle.waves.mean / best.waves.mean >= F.idleShare) add('high', 'Heroes', `${this.heroName(h)}: an idle hero reaches ${idle.waves.mean} waves, ${Math.round(idle.waves.mean / best.waves.mean * 100)}% of the best active strategy (${best.waves.mean}). The hero matters little.`);
     }
     // tower value
     const tv = rep.towerValue, towers = ['arrow', 'cannon', 'frost'].filter(t => tv[t] && tv[t].gold > 0);
@@ -167,15 +154,13 @@ const SimReport = {
       if (s.share / 100 < F.lowSkillShare) add('low', 'Skills', `${this.heroName(h)} ${k} ${CONFIG.skills[h][k].name}: ${s.share}% of hero damage (${s.casts} casts, ${s.perCast} dmg/cast).`);
     }
     // Keep damage by enemy type
-    for (const d of diffs) {
-      const kd = {};
-      for (const c of C) if (c.difficulty === d) this.sumInto(kd, c.keepDamage);
-      const tot = Object.values(kd).reduce((a, b) => a + b, 0);
-      for (const t in kd) if (tot > 0 && kd[t] / tot > F.keepDamageShare) add('medium', 'Enemies', `${this.diffName(d)}: ${CONFIG.enemies[t] ? CONFIG.enemies[t].name : t} deals ${this.pct(kd[t], tot)}% of all Keep damage.`);
-    }
+    const kd = {};
+    for (const c of C) this.sumInto(kd, c.keepDamage);
+    const kdTot = Object.values(kd).reduce((a, b) => a + b, 0);
+    for (const t in kd) if (kdTot > 0 && kd[t] / kdTot > F.keepDamageShare) add('medium', 'Enemies', `${CONFIG.enemies[t] ? CONFIG.enemies[t].name : t} deals ${this.pct(kd[t], kdTot)}% of all Keep damage.`);
     // early losses, caps, stalls
     for (const c of C) {
-      const name = `${this.heroName(c.hero)} · ${this.diffName(c.difficulty)} · ${this.stratName(c.strategy)}`;
+      const name = `${this.heroName(c.hero)} · ${this.stratName(c.strategy)}`;
       if (c.waves.min < F.earlyLossWave) add('high', 'Runs', `${name}: a run fell before wave ${F.earlyLossWave} (min ${c.waves.min}).`);
       if (c.capped === c.n) add('low', 'Runs', `${name}: every run reached the wave cap (${cap}). Raise the cap to tell it apart.`);
       if (c.errors) add('high', 'Runs', `${name}: ${c.errors} run(s) crashed with a game exception: ${c.errorText}`);
@@ -189,12 +174,11 @@ const SimReport = {
     const L = [], s = rep.settings, m = rep.meta, C = rep.combos;
     const fmtT = (sec) => Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
     const table = (head, rows) => { L.push('| ' + head.join(' | ') + ' |', '|' + head.map(() => '---').join('|') + '|'); rows.forEach(r => L.push('| ' + r.join(' | ') + ' |')); L.push(''); };
-    const diffs = this.DIFFS.filter(d => s.difficulties.includes(d));
-    const get = (h, d, st) => C.find(c => c.hero === h && c.difficulty === d && c.strategy === st);
+    const get = (h, st) => C.find(c => c.hero === h && c.strategy === st);
 
     L.push('# Balance simulation report', '');
     L.push(`Generated ${rep.generated}. ${m.completed}/${m.planned} runs${m.cancelled ? ' (cancelled early)' : ''} in ${fmtT(m.realTime)} real time.`);
-    L.push(`Heroes: ${s.heroes.map(h => this.heroName(h)).join(', ')} · Difficulties: ${diffs.map(d => this.diffName(d)).join(', ')} · Strategies: ${s.strategies.map(x => this.stratName(x)).join(', ')} · Seeds: ${s.seeds} · Wave cap: ${s.waveCap}`, '');
+    L.push(`Heroes: ${s.heroes.map(h => this.heroName(h)).join(', ')} · Strategies: ${s.strategies.map(x => this.stratName(x)).join(', ')} · Seeds: ${s.seeds} · Wave cap: ${s.waveCap}`, '');
     L.push('Waves are waves cleared. "+" marks a run that hit the wave cap. A bot plays the hero (see `CONFIG.sim.bot`), so absolute numbers reflect the bot, not a skilled player. Compare rows and columns rather than reading single values.', '');
 
     L.push('## Flags', '');
@@ -205,19 +189,17 @@ const SimReport = {
     L.push('## Waves cleared (mean [min–max])', '');
     const rows = [];
     for (const h of s.heroes) for (const st of s.strategies) {
-      rows.push([this.heroName(h), this.stratName(st)].concat(diffs.map(d => {
-        const c = get(h, d, st);
-        return c ? `${c.waves.mean} [${c.waves.min}–${c.waves.max}]${c.capped ? ' +' + c.capped : ''}` : '–';
-      })));
+      const c = get(h, st);
+      rows.push([this.heroName(h), this.stratName(st), c ? `${c.waves.mean} [${c.waves.min}–${c.waves.max}]${c.capped ? ' +' + c.capped : ''}` : '–']);
     }
-    table(['Hero', 'Strategy'].concat(diffs.map(d => this.diffName(d))), rows);
+    table(['Hero', 'Strategy', 'Waves'], rows);
 
     L.push('## Damage share by source (% of damage dealt to enemies)', '');
     const srcCols = [['Atk', ['hero:attack', 'hero:chain', 'hero:thorns']], ['Q', ['hero:Q']], ['W', ['hero:W']], ['E', ['hero:E']], ['R', ['hero:R']],
       ['Arrow', ['tower:arrow']], ['Cannon', ['tower:cannon']], ['Frost', ['tower:frost']], ['Keep', ['keep']], ['Allies', ['ally:soldier', 'ally:archer']]];
-    table(['Hero', 'Diff', 'Strategy'].concat(srcCols.map(x => x[0])), C.map(c => {
+    table(['Hero', 'Strategy'].concat(srcCols.map(x => x[0])), C.map(c => {
       const tot = Object.values(c.damage).reduce((a, b) => a + b, 0);
-      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy)].concat(srcCols.map(([, ks]) => this.pct(ks.reduce((a, k) => a + (c.damage[k] || 0), 0), tot)));
+      return [this.heroName(c.hero), this.stratName(c.strategy)].concat(srcCols.map(([, ks]) => this.pct(ks.reduce((a, k) => a + (c.damage[k] || 0), 0), tot)));
     }));
 
     L.push('## Building value (damage per gold spent, all runs)', '');
@@ -234,35 +216,35 @@ const SimReport = {
     }
 
     L.push('## Hero', '');
-    table(['Hero', 'Diff', 'Strategy', 'Final level', 'Deaths/run', 'Damage taken by type'], C.map(c => {
+    table(['Hero', 'Strategy', 'Final level', 'Deaths/run', 'Damage taken by type'], C.map(c => {
       const tot = Object.values(c.heroDamage).reduce((a, b) => a + b, 0);
       const top = Object.entries(c.heroDamage).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${this.pct(v, tot)}%`).join(', ');
-      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.heroLevel, c.heroDeaths, top || '–'];
+      return [this.heroName(c.hero), this.stratName(c.strategy), c.heroLevel, c.heroDeaths, top || '–'];
     }));
 
     L.push('## Keep', '');
     const hpWaves = []; for (let w = 5; w <= s.waveCap; w += 5) hpWaves.push(w);
-    table(['Hero', 'Diff', 'Strategy', 'Final tier', 'Damage taken by type'].concat(hpWaves.map(w => 'HP% w' + w)), C.map(c => {
+    table(['Hero', 'Strategy', 'Final tier', 'Damage taken by type'].concat(hpWaves.map(w => 'HP% w' + w)), C.map(c => {
       const tot = Object.values(c.keepDamage).reduce((a, b) => a + b, 0);
       const top = Object.entries(c.keepDamage).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${this.pct(v, tot)}%`).join(', ');
-      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.keepTier, top || '–'].concat(hpWaves.map(w => c.keepHpAt[w] != null ? c.keepHpAt[w] : '–'));
+      return [this.heroName(c.hero), this.stratName(c.strategy), c.keepTier, top || '–'].concat(hpWaves.map(w => c.keepHpAt[w] != null ? c.keepHpAt[w] : '–'));
     }));
 
     L.push('## Economy (mean per run)', '');
     const outCats = ['keep', 'arrow', 'cannon', 'frost', 'mine'];
-    table(['Hero', 'Diff', 'Strategy', 'Earned', 'Bounty', 'Wave tick', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
+    table(['Hero', 'Strategy', 'Earned', 'Bounty', 'Wave tick', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
       const per = (v) => Math.round((v || 0) / c.n);
-      return [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.tick), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
+      return [this.heroName(c.hero), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.tick), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
     }));
 
     L.push('## Items: mean wave of first purchase', '');
     const items = CONFIG.itemOrder.filter(k => C.some(c => c.firstItem[k] != null));
-    if (items.length) table(['Hero', 'Diff', 'Strategy'].concat(items.map(k => CONFIG.items[k].name)), C.filter(c => Object.keys(c.firstItem).length).map(c =>
-      [this.heroName(c.hero), this.diffName(c.difficulty), this.stratName(c.strategy)].concat(items.map(k => c.firstItem[k] != null ? c.firstItem[k] : '–'))));
+    if (items.length) table(['Hero', 'Strategy'].concat(items.map(k => CONFIG.items[k].name)), C.filter(c => Object.keys(c.firstItem).length).map(c =>
+      [this.heroName(c.hero), this.stratName(c.strategy)].concat(items.map(k => c.firstItem[k] != null ? c.firstItem[k] : '–'))));
 
     L.push('## Runs', '');
-    table(['Hero', 'Diff', 'Strategy', 'Seed', 'Waves', 'End', 'Time', 'Level', 'Kills', 'Deaths', 'Keep tier', 'Items'], rep.runs.map(r =>
-      [this.heroName(r.hero), this.diffName(r.difficulty), this.stratName(r.strategy), r.seed, r.wavesCleared, r.end, fmtT(r.time), r.heroLevel, r.kills, r.heroDeaths.length, r.keepTier,
+    table(['Hero', 'Strategy', 'Seed', 'Waves', 'End', 'Time', 'Level', 'Kills', 'Deaths', 'Keep tier', 'Items'], rep.runs.map(r =>
+      [this.heroName(r.hero), this.stratName(r.strategy), r.seed, r.wavesCleared, r.end, fmtT(r.time), r.heroLevel, r.kills, r.heroDeaths.length, r.keepTier,
         Object.entries(r.items).map(([k, v]) => k + v).join(' ') || '–']));
     return L.join('\n');
   },

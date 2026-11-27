@@ -5,8 +5,6 @@ class GameScene extends Phaser.Scene {
 
   init(data) {
     this.heroKey = data.hero || 'warrior';
-    this.diffKey = data.difficulty || 'normal';
-    this.diff = CONFIG.difficulty[this.diffKey];
     this.simJob = data.sim || null;     // balance simulation run (see SimRunner)
   }
 
@@ -38,11 +36,11 @@ class GameScene extends Phaser.Scene {
     this.keep = new Keep(this);
     CONFIG.map.towers.forEach((lane, li) => lane.forEach((def, i) => this.towers.push(new Tower(this, li, i, def))));
     this.hero = new Hero(this, this.heroKey, this.keep.front.x, this.keep.front.y);
-    this.economy = new Economy(this, this.diff.startGold);
+    this.economy = new Economy(this, CONFIG.startGold);
     this.leveling = new Leveling(this, this.hero);
     this.picks = new ItemPicks(this, this.hero);
     this.build = new BuildSystem(this);
-    this.waves = new WaveManager(this, this.diff);
+    this.waves = new WaveManager(this);
 
     this.hpG = this.add.graphics().setDepth(50);
     this.indG = this.add.graphics().setDepth(45);
@@ -415,14 +413,14 @@ class GameScene extends Phaser.Scene {
     this.ended = true;
     if (this.simJob) { SimRunner.endRun(this, 'keep'); return; }
     const s = this.stats, sc = CONFIG.score;
-    const score = Math.round((s.wavesCleared * sc.perWave + s.kills * sc.perKill + this.hero.level * sc.perLevel + s.time * sc.perSecond) * this.diff.scoreMul);
-    const key = 'cd_best_' + this.diffKey;
+    const score = Math.round(s.wavesCleared * sc.perWave + s.kills * sc.perKill + this.hero.level * sc.perLevel + s.time * sc.perSecond);
+    const key = sc.bestKey;
     let best = 0;
     try { best = parseInt(localStorage.getItem(key) || '0', 10) || 0; } catch (e) { /* ignore */ }
     const newBest = score > best;
     if (newBest) { try { localStorage.setItem(key, String(score)); } catch (e) { /* ignore */ } best = score; }
     const data = {
-      hero: this.heroKey, difficulty: this.diffKey, waves: s.wavesCleared, reached: this.waves.wave,
+      hero: this.heroKey, waves: s.wavesCleared, reached: this.waves.wave,
       time: s.time, kills: s.kills, level: this.hero.level, score, best, newBest,
     };
     this.cameras.main.flash(400, 255, 80, 60);

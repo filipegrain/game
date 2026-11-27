@@ -86,7 +86,7 @@ class SimRecorder {
     const towers = {};
     for (const b of sc.buildings) if (b.alive) towers[b.type] = (towers[b.type] || []).concat(b.level);
     return JSON.parse(JSON.stringify({
-      hero: sc.heroKey, difficulty: sc.diffKey, strategy: sc.simJob.strategy, seed: sc.simJob.seed,
+      hero: sc.heroKey, strategy: sc.simJob.strategy, seed: sc.simJob.seed,
       end: reason, wavesCleared: sc.stats.wavesCleared, reachedWave: sc.waves.wave,
       time: Math.round(sc.stats.time), kills: sc.stats.kills,
       heroLevel: h.level, keepTier: sc.keep.tier, keepHpPct: Math.round(Math.max(0, sc.keep.hp) / sc.keep.maxHp * 100),

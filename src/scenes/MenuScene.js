@@ -1,10 +1,10 @@
-// Hero + difficulty select.
+// Hero select.
 
 class MenuScene extends Phaser.Scene {
   constructor() { super('MenuScene'); }
 
   init(data) {
-    this.choice = { hero: (data && data.hero) || this.choice?.hero || 'warrior', difficulty: (data && data.difficulty) || this.choice?.difficulty || 'normal' };
+    this.choice = { hero: (data && data.hero) || this.choice?.hero || 'warrior' };
   }
 
   create() {
@@ -24,20 +24,9 @@ class MenuScene extends Phaser.Scene {
     this.makeHeroCard('warrior', 340, 180);
     this.makeHeroCard('mage', 660, 180);
 
-    this.add.text(640, 470, 'DIFFICULTY', { fontFamily: FONT, fontSize: '16px', color: '#9ca3af', fontStyle: 'bold' }).setOrigin(0.5);
-    this.diffBtns = {};
-    const diffs = Object.keys(CONFIG.difficulty);
-    diffs.forEach((d, i) => {
-      const x = 640 - diffs.length * 85 + 10 + i * 170, y = 490;
-      const r = this.add.rectangle(x, y, 150, 44, 0x1f2937).setOrigin(0).setStrokeStyle(2, 0x4b5563).setInteractive({ useHandCursor: true });
-      const label = CONFIG.difficulty[d].label;
-      let best = 0;
-      try { best = parseInt(localStorage.getItem('cd_best_' + d) || '0', 10) || 0; } catch (e) { /* ignore */ }
-      this.add.text(x + 75, y + 15, label, { fontFamily: FONT, fontSize: '18px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
-      this.add.text(x + 75, y + 34, 'Best: ' + best, { fontFamily: FONT, fontSize: '11px', color: '#ffd23f' }).setOrigin(0.5);
-      r.on('pointerdown', () => { Sfx.resume(); Sfx.play('click'); this.choice.difficulty = d; this.refresh(); });
-      this.diffBtns[d] = r;
-    });
+    let best = 0;
+    try { best = parseInt(localStorage.getItem(CONFIG.score.bestKey) || '0', 10) || 0; } catch (e) { /* ignore */ }
+    this.add.text(640, 510, 'BEST SCORE  ' + best, { fontFamily: FONT, fontSize: '18px', color: '#ffd23f', fontStyle: 'bold' }).setOrigin(0.5);
 
     const start = this.add.rectangle(540, 570, 200, 54, 0x7a2a2a).setOrigin(0).setStrokeStyle(3, 0xff6060).setInteractive({ useHandCursor: true });
     this.add.text(640, 597, 'START', { fontFamily: FONT, fontSize: '26px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
@@ -80,12 +69,11 @@ class MenuScene extends Phaser.Scene {
 
   refresh() {
     for (const k in this.heroCards) this.heroCards[k].setStrokeStyle(3, this.choice.hero === k ? 0xffd23f : 0x4b5563);
-    for (const k in this.diffBtns) this.diffBtns[k].setStrokeStyle(2, this.choice.difficulty === k ? 0xffd23f : 0x4b5563).setFillStyle(this.choice.difficulty === k ? 0x374151 : 0x1f2937);
   }
 
   startGame() {
     Sfx.resume();
     Sfx.play('wave');
-    this.scene.start('GameScene', { hero: this.choice.hero, difficulty: this.choice.difficulty });
+    this.scene.start('GameScene', { hero: this.choice.hero });
   }
 }

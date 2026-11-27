@@ -15,7 +15,7 @@ python -m http.server
 # then open http://localhost:8000
 ```
 
-Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **Enter** or click to start.
+Pick a hero in the menu (the game runs on Hard), then press **Enter** or click to start.
 
 ## Controls
 
@@ -54,11 +54,11 @@ Pick a hero and a difficulty (Easy / Medium / Hard) in the menu, then press **En
 - **Keep tiers (1–4):** each tier adds Keep HP, makes lane towers and creeps 15% stronger, unlocks buildings, and later gives the Keep its own attack and nearby structure repair.
 - **Leveling:** no level cap. All skills are available from the start, grow stronger every level, and unlock extra effects at milestone levels. There is no mana, only cooldowns.
 - **Items:** every level-up offers a choice of items. Picking one you own levels it up, and owned items show up more often. There is no slot limit. Gold (from kills and a payout every wave) only buys buildings and Keep tiers.
-- **Score:** based on waves, kills, hero level and time. The best score for each difficulty is saved in your browser.
+- **Score:** based on waves, kills, hero level and time. The best score is saved in your browser.
 
 ## Balance simulation
 
-The simulation runs headless, in several Chrome windows at once. A bot plays each hero, difficulty, strategy and seed in the real game at high speed:
+The simulation runs headless, in several Chrome windows at once. A bot plays each hero, strategy and seed in the real game at high speed:
 
 ```
 node .claude/skills/verify-castle-defense/scripts/cdg.mjs launch
@@ -67,12 +67,12 @@ node tools/simpar.mjs 6 '{"heroes":["mage"],"seeds":5,"waveCap":20}'
 node .claude/skills/verify-castle-defense/scripts/cdg.mjs stop
 ```
 
-It writes a report to `.verify/artifacts/` as `.md` and `.json`. The Markdown report shows waves survived (about one per minute) per hero, strategy and difficulty, plus automatic balance flags and the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. The JSON holds the raw data for diffing two balance passes. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
+It writes a report to `.verify/artifacts/` as `.md` and `.json`. The Markdown report shows waves survived (about one per minute) per hero and strategy, plus automatic balance flags and the full tables: damage share by source, building damage per gold, skill usage, hero and Keep damage taken, economy, Keep HP over time, item timings and every run. The JSON holds the raw data for diffing two balance passes. Bot behavior, strategies and flag thresholds are in `CONFIG.sim`.
 
 ## Development
 
 - Plain JavaScript, no modules or build step. Files load in order through `<script>` tags in `index.html`, so add new files there.
-- All balance numbers (stats, costs, cooldowns, wave scaling, difficulty) live in `src/config.js`.
+- All balance numbers (stats, costs, cooldowns, wave scaling) live in `src/config.js`.
 
 ```
 src/

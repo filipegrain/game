@@ -17,7 +17,7 @@ ws.onmessage = (m) => { const d = JSON.parse(m.data); if (pending.has(d.id)) { p
 const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
 const ev = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result.result.value;
 
-await ev(`(() => { const m = game.scene.getScene('MenuScene'); SimRunner.start(m, { heroes: ['${hero}'], difficulties: ['normal'], strategies: ['${strategy}'], seeds: 50, waveCap: 999 }); })()`);
+await ev(`(() => { const m = game.scene.getScene('MenuScene'); SimRunner.start(m, { heroes: ['${hero}'], strategies: ['${strategy}'], seeds: 50, waveCap: 999 }); })()`);
 await new Promise(r => setTimeout(r, 2000));   // warm up past the first wave
 await send('Profiler.enable');
 await send('Profiler.setSamplingInterval', { interval: 200 });

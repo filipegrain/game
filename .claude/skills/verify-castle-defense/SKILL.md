@@ -38,7 +38,7 @@ All coordinates are **game coordinates**: the 1280×720 canvas space that `CONFI
 
 | Command | Use |
 | --- | --- |
-| `start <warrior\|mage> <normal\|hard>` | Clicks the hero card, the difficulty and START on `MenuScene`, then waits for `GameScene` and `UIScene` |
+| `start <warrior\|mage>` | Clicks the hero card and START on `MenuScene`, then waits for `GameScene` and `UIScene` |
 | `state` | Compact JSON with active scenes, hero (pos, hp, level, xp, cooldowns, aiming, order, items), keep, gold, wave/nextWaveIn, enemy/neutral/ally counts, lane towers, buildings, placing/selected, picks, paused/ended, stats, camera |
 | `key <Code> [--down\|--up] [--hold ms]` | A real key event by `KeyboardEvent.code`: `KeyQ`…`KeyR`, `KeyA`, `KeyS`, `KeyV`, `KeyU`, `KeyP`, `KeyM`, `Digit1`…`Digit4`, `Enter`, `Escape`, `Space` |
 | `move x y` / `click x y [left\|right]` | Mouse input at screen (HUD) coordinates |
@@ -49,7 +49,7 @@ All coordinates are **game coordinates**: the 1280×720 canvas space that `CONFI
 | `logs [--clear]` | Console errors and warnings plus uncaught exceptions since launch |
 
 Key HUD positions in game coordinates, from `MenuScene` and `UIScene`:
-- Menu: Warrior card centre (480,300), Mage card centre (800,300), Normal/Hard (555,512)/(725,512), START (640,597).
+- Menu: Warrior card centre (480,300), Mage card centre (800,300), START (640,597).
 - In game: pause (1254,16), minimap bottom-left (8..184, ~616..712; left-click moves the camera), BUILD (1240,78), KEEP upgrade (1240,143), Mage/Warrior skill icons Q/W/E/R at (638|704|770|836, 668), build panel column x=1164 with rows at y=79+62·i in `BUILD_TYPES` order, and item pick cards centred at (442|639|836, 271).
 
 Skill input follows `CONFIG.skills[hero][key].cast`:

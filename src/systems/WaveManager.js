@@ -3,9 +3,8 @@
 // refill, and tick gold (plus Gold Mines) is paid. Endless; enemy count and stats grow per wave.
 
 class WaveManager {
-  constructor(scene, diff) {
+  constructor(scene) {
     this.scene = scene;
-    this.diff = diff;
     this.wave = 0;                               // last wave started
     this.timer = CONFIG.waves.firstDelay;        // s until the next wave tick
     this.queues = CONFIG.map.spawns.map(() => ({ items: [], t: 0 }));   // per spawn: pending { type, at }
@@ -15,10 +14,10 @@ class WaveManager {
   }
 
   mods(n) {
-    const W = CONFIG.waves, e = (n - 1) * this.diff.scaling;
+    const W = CONFIG.waves, e = (n - 1) * W.scaling;
     return {
-      hp: this.diff.enemyMul * (1 + W.hpLinear * e) * Math.pow(W.hpExp, e),
-      dmg: this.diff.enemyMul * (1 + W.dmgPerWave * e),
+      hp: W.enemyMul * (1 + W.hpLinear * e) * Math.pow(W.hpExp, e),
+      dmg: W.enemyMul * (1 + W.dmgPerWave * e),
       speed: Math.min(W.speedCap, 1 + W.speedPerWave * e),
       gold: 1 + W.goldPerWaveScaling * (n - 1),
       xp: 1 + W.xpPerWaveScaling * (n - 1),

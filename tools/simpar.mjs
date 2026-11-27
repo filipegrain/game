@@ -3,7 +3,7 @@
 // a single-tab run of the same settings.
 // Usage: node .claude/skills/verify-castle-defense/scripts/cdg.mjs launch
 //        node tools/simpar.mjs [tabs=cores/2] ['{"heroes":["warrior"],"seeds":5,...}']
-// Settings default to the full sweep: every hero, difficulty and strategy, CONFIG.sim.defaultSeeds and defaultWaveCap.
+// Settings default to the full sweep: every hero and strategy, CONFIG.sim.defaultSeeds and defaultWaveCap.
 // Writes .verify/artifacts/<report stem>.json and .md and prints the timing.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -49,7 +49,7 @@ async function openTab() {
 }
 
 const pages = await Promise.all(Array.from({ length: tabs }, openTab));
-const settings = Object.assign(await pages[0].ev(`({ heroes: Object.keys(CONFIG.heroes), difficulties: Object.keys(CONFIG.difficulty),
+const settings = Object.assign(await pages[0].ev(`({ heroes: Object.keys(CONFIG.heroes),
   strategies: Object.keys(CONFIG.sim.strategies), seeds: CONFIG.sim.defaultSeeds, waveCap: CONFIG.sim.defaultWaveCap })`), overrides);
 
 const t0 = performance.now();
@@ -61,12 +61,12 @@ const shards = await Promise.all(pages.map(async (p, i) => {
 }));
 const realTime = (performance.now() - t0) / 1000;
 
-const order = (r) => [settings.heroes.indexOf(r.hero), settings.difficulties.indexOf(r.difficulty), settings.strategies.indexOf(r.strategy), r.seed];
+const order = (r) => [settings.heroes.indexOf(r.hero), settings.strategies.indexOf(r.strategy), r.seed];
 const runs = shards.flat().sort((a, b) => {
   const x = order(a), y = order(b), k = x.findIndex((v, j) => v !== y[j]);
   return k < 0 ? 0 : x[k] - y[k];
 });
-const jobs = settings.heroes.length * settings.difficulties.length * settings.strategies.length * settings.seeds;
+const jobs = settings.heroes.length * settings.strategies.length * settings.seeds;
 const { rep, md } = await pages[0].ev(`(() => { const rep = SimReport.build(${JSON.stringify(runs)}, ${JSON.stringify(settings)},
   { cancelled: false, realTime: ${realTime}, planned: ${jobs}, tabs: ${tabs} }); return { rep, md: SimReport.markdown(rep) }; })()`);
 await Promise.all(pages.map(p => p.close()));

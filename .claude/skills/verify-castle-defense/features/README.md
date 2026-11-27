@@ -11,7 +11,7 @@ This directory is the maintained source for verifying what a player can do in Ca
 
 ## Driving conventions
 
-- Start each recipe from a fresh `start <hero> <difficulty>` unless its preconditions say otherwise. To get back to the menu, `stop` and `launch`.
+- Start each recipe from a fresh `start <hero>` unless its preconditions say otherwise. To get back to the menu, `stop` and `launch`.
 - Drive with `key`, `click`, `wclick` and `wmove`. Use `eval` and `state` only to read state or find targets.
 - Find world targets with `eval` rather than hard-coding them. Map tiles are 32 px, so world = `CONFIG.px(tile) + 16` for a tile centre.
 - Wait with `wait '<expr>' <ms>`, never with a fixed sleep.
@@ -30,7 +30,7 @@ Each feature file has an H1 title and one paragraph, then exactly four H2 sectio
 
 ## Features
 
-- [Start a game](./start-game.md) covers choosing a hero and difficulty in the menu and entering the game.
+- [Start a game](./start-game.md) covers choosing a hero in the menu and entering the game.
 - [Hero movement and skills](./hero-skills.md) covers right-click move, and the aim, instant and auto skill casts for both heroes.
 - [Build towers](./build.md) covers the build panel and hotkeys, placement validity, gold spending, and cancelling.
 - [Waves and level-up picks](./waves-picks.md) covers starting a wave, enemies spawning and dying, XP, and picking an item.

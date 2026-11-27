@@ -22,7 +22,7 @@ There is no build step, package manager, linter or test suite. Phaser 3.80.1 loa
 
 ## Architecture
 
-**Scenes** (`src/scenes/`): `MenuScene` (hero and difficulty select) → `GameScene` (the whole simulation, input and camera) plus `UIScene` (HUD, launched in parallel) → `GameOverScene`.
+**Scenes** (`src/scenes/`): `MenuScene` (hero select) → `GameScene` (the whole simulation, input and camera) plus `UIScene` (HUD, launched in parallel) → `GameOverScene`.
 
 **GameScene owns all game state.** It keeps the entity arrays (`enemies` — neutral camp monsters included, flagged `neutral` —, `allies`, `buildings`, `towers`, `projectiles`) and the system instances (`pathing`, `economy`, `leveling`, `picks`, `build`, `waves`). Entities and systems hold a `scene` reference and reach everything through it (e.g. `this.scene.economy`, `this.scene.enemies`).
 
@@ -48,4 +48,4 @@ There is no build step, package manager, linter or test suite. Phaser 3.80.1 loa
 
 **Balance simulation** (`src/sim/`, headless only: `node tools/simpar.mjs [windows] [settings JSON]` after `cdg launch`): `tools/simpar.mjs` splits the job list across Chrome windows (`SimRunner` `shard`) and merges the runs with `SimReport` into `.verify/artifacts/`. `SimRunner` restarts `GameScene` with `data.sim`, where `SimBot` replaces input and `SimRecorder` collects stats, and steps it in fixed ticks with `Feel`/`Sfx` off and `Math.random` seeded. Keep it working when changing gameplay: tag skill damage with its key (`skill: 'Q'`), keep gameplay timing on `scene.timers`/`update(dt)` rather than tweens or Phaser timers, add new spending options to `SimBot.resolve` and `CONFIG.sim.strategies`, and add new items to `CONFIG.sim.itemBuilds` (the bot's pick priority).
 
-**Persistence:** best score per difficulty in `localStorage` under `cd_best_<difficulty>`.
+**Persistence:** best score in `localStorage` under `CONFIG.score.bestKey`.

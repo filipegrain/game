@@ -12,7 +12,6 @@ class GameOverScene extends Phaser.Scene {
     const mins = Math.floor(d.time / 60), secs = Math.floor(d.time % 60);
     const rows = [
       ['Hero', CONFIG.heroes[d.hero].name],
-      ['Difficulty', CONFIG.difficulty[d.difficulty].label],
       ['Waves survived', String(d.waves)],
       ['Time', mins + ':' + String(secs).padStart(2, '0')],
       ['Kills', String(d.kills)],
@@ -24,7 +23,7 @@ class GameOverScene extends Phaser.Scene {
     });
     const score = this.add.text(640, 445, 'SCORE ' + d.score, { fontFamily: FONT, fontSize: '40px', color: '#ffd23f', fontStyle: 'bold', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5);
     this.tweens.add({ targets: score, scale: { from: 0.6, to: 1 }, duration: 500, ease: 'Back.easeOut' });
-    this.add.text(640, 490, d.newBest ? 'NEW BEST!' : 'Best (' + CONFIG.difficulty[d.difficulty].label + '): ' + d.best,
+    this.add.text(640, 490, d.newBest ? 'NEW BEST!' : 'Best: ' + d.best,
       { fontFamily: FONT, fontSize: '20px', color: d.newBest ? '#7cf29a' : '#cbd5e1', fontStyle: 'bold' }).setOrigin(0.5);
 
     const mk = (x, label, color, fn) => {
@@ -32,8 +31,8 @@ class GameOverScene extends Phaser.Scene {
       this.add.text(x + 100, 585, label, { fontFamily: FONT, fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
       r.on('pointerdown', () => { Sfx.play('click'); fn(); });
     };
-    mk(420, 'Retry', 0x7a2a2a, () => this.scene.start('GameScene', { hero: d.hero, difficulty: d.difficulty }));
-    mk(660, 'Menu', 0x1f2937, () => this.scene.start('MenuScene', { hero: d.hero, difficulty: d.difficulty }));
-    this.input.keyboard.on('keydown-ENTER', () => this.scene.start('GameScene', { hero: d.hero, difficulty: d.difficulty }));
+    mk(420, 'Retry', 0x7a2a2a, () => this.scene.start('GameScene', { hero: d.hero }));
+    mk(660, 'Menu', 0x1f2937, () => this.scene.start('MenuScene', { hero: d.hero }));
+    this.input.keyboard.on('keydown-ENTER', () => this.scene.start('GameScene', { hero: d.hero }));
   }
 }

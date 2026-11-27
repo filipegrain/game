@@ -20,7 +20,7 @@ const HELP = `cdg — drive Castle Defense (headless Chrome + CDP)
 
   launch [--headed]          start static server + Chrome on free ports, wait for MenuScene
   doctor                     read-only health check of the instance this checkout launched
-  start <hero> <difficulty>  MenuScene -> GameScene (warrior|mage, normal|hard) via the START flow
+  start <hero>               MenuScene -> GameScene (warrior|mage) via the START flow
   state                      compact JSON snapshot of scenes and game state
   eval <js>                  evaluate JS in the page (globals: game, CONFIG, ...); prints JSON result
   wait <js> [timeoutMs]      poll until the JS expression is truthy (default 10000 ms)
@@ -152,7 +152,7 @@ const STATE_JS = `(() => {
             cooldowns: Object.fromEntries(Object.entries(h.cooldowns).map(([a, b]) => [a, r(b)])), aiming: h.aiming,
             order: h.order ? h.order.type || true : null, items: h.itemLevels },
     keep: { hp: r(k.hp), maxHp: k.maxHp, tier: k.tier },
-    difficulty: gs.diffKey, gold: gs.economy.gold, wave: w.wave, nextWaveIn: r(w.timer),
+    gold: gs.economy.gold, wave: w.wave, nextWaveIn: r(w.timer),
     enemies: gs.enemies.filter(e => e.alive && !e.neutral).length, neutrals: gs.enemies.filter(e => e.alive && e.neutral).length,
     towers: gs.towers.filter(t => t.alive).map(t => ({ lane: t.lane, order: t.order, hp: r(t.hp) })), allies: gs.allies.filter(a => a.alive).length,
     buildings: gs.buildings.map(b => ({ type: b.type, level: b.level, tx: b.tx, ty: b.ty })),
@@ -294,19 +294,18 @@ async function main() {
         break;
       }
       case 'start': {
-        const [hero, diff] = a;
-        if (!['warrior', 'mage'].includes(hero) || !['normal', 'hard'].includes(diff)) die('usage: start <warrior|mage> <normal|hard>');
+        const [hero] = a;
+        if (!['warrior', 'mage'].includes(hero)) die('usage: start <warrior|mage>');
         if (!(await evaluate(c, `game.scene.isActive('MenuScene')`))) die('MenuScene is not active');
-        // hero cards: warrior at (340,180), mage at (660,180), 280x270. Difficulty buttons (normal, hard) at x=480+i*170, y=490, 150x44. START at (540,570) 200x54.
+        // hero cards: warrior at (340,180), mage at (660,180), 280x270. START at (540,570) 200x54.
         await click(c, hero === 'warrior' ? 480 : 800, 300);
-        await click(c, 480 + ['normal', 'hard'].indexOf(diff) * 170 + 75, 512);
         await click(c, 640, 597);
         const t0 = Date.now();
         while (!(await evaluate(c, `game.scene.isActive('GameScene') && game.scene.isActive('UIScene')`))) {
           if (Date.now() - t0 > 5000) die('GameScene did not start');
           await sleep(100);
         }
-        console.log(JSON.stringify(await evaluate(c, `(() => { const gs = game.scene.getScene('GameScene'); return { hero: gs.heroKey, difficulty: gs.diffKey, gold: gs.economy.gold }; })()`)));
+        console.log(JSON.stringify(await evaluate(c, `(() => { const gs = game.scene.getScene('GameScene'); return { hero: gs.heroKey, gold: gs.economy.gold }; })()`)));
         break;
       }
       case 'key': {

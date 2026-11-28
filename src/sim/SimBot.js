@@ -8,7 +8,6 @@ class SimBot {
     this.hero = scene.hero;
     this.strat = CONFIG.sim.strategies[strategyKey];
     this.B = CONFIG.sim.bot;
-    this.HB = this.B[scene.heroKey];
     this.idle = this.strat.hero === 'idle';
     this.inOpening = this.strat.opening.length > 0;
     this.stepIdx = 0;
@@ -18,7 +17,6 @@ class SimBot {
     this.laneRR = 0;
     this.leak = [0, 0, 0];   // Keep damage taken per origin lane
     this.itemBuild = CONFIG.sim.itemBuilds[scene.heroKey];
-    if (this.idle && this.hero.kit.autoQ != null) this.hero.kit.autoQ = false;   // idle = basic attacks only
   }
 
   onKeepDamage(lane, dmg) { if (lane != null) this.leak[lane] += dmg; }
@@ -115,59 +113,48 @@ class SimBot {
   }
 
   ready(k) { return this.hero.cooldowns[k] <= 0; }
-  cast(k, x, y) { return this.hero.tryCast(k, x, y); }
 
   useSkills() {
     const h = this.hero;
     if (!h.alive || h.kit.busy || h.stunned) return;
-    const near = this.near(700);
+    const near = this.near(this.B.scanRange);
     if (!near.length) return;
-    if (this.scene.heroKey === 'warrior') this.warriorSkills(near);
-    else this.mageSkills(near);
+    for (const k of SKILL_KEYS) {
+      if (!this.ready(k)) continue;
+      const id = h.skillIds[k], rule = SimBot.SKILL_AI[id];
+      const at = rule && rule.call(this, h.skillDefs[k], near);
+      if (at && h.tryCast(k, at.x, at.y)) return;   // one cast per check
+    }
   }
 
-  // Only Dash is active; Whirl, Rage and Bloodthirst are passive.
-  warriorSkills(near) {
-    const h = this.hero, S = CONFIG.skills.warrior, W = this.HB;
-    if (!this.ready('R')) return;
-    const range = h.skillRadius(S.R.range * (1 + (h.stats.dashRange || 0)));
-    if (this.retreating) {
-      if (near.some(e => Math.hypot(e.x - h.x, e.y - h.y) < 150)) { const hm = this.home(); this.cast('R', hm.x, hm.y); }
-      return;
-    }
+  // ---- rule helpers (return a cast point or null)
+  areaAt(def, near, min = this.B.clusterMin) {
+    const h = this.hero, r = h.skillRadius(def.radius || 100);
+    const c = this.cluster(near, h.x, h.y, def.range, r * 0.8);
+    return c.count >= min || c.boss ? c : null;
+  }
+  lineAt(def, near, min = this.B.lineMin) {
+    const h = this.hero, c = this.cluster(near, h.x, h.y, def.range * 0.8, 90);
+    if (c.count >= min || c.boss) return c;
     const f = this.focus;
-    const d = f && f.alive ? Math.hypot(f.x - h.x, f.y - h.y) : Infinity;
-    if (d > W.dashMinDist && d <= range + 40) { this.cast('R', f.x, f.y); return; }
-    const c = this.cluster(near, h.x, h.y, range, 60);
-    if (c.count >= W.dashCluster) this.cast('R', c.x, c.y);
+    return f && f.alive && Math.hypot(f.x - h.x, f.y - h.y) <= def.range * 0.7 ? f : null;
   }
-
-  mageSkills(near) {
-    const h = this.hero, S = CONFIG.skills.mage, M = this.HB, k = this.scene.keep;
-    if (this.ready('R')) {
-      const c = this.cluster(near, h.x, h.y, S.R.range, S.R.radius * 0.7);
-      if (c.count >= M.ultMin || c.boss) { this.cast('R', c.x, c.y); return; }
-    }
-    if (this.ready('E')) {
-      const r = h.skillRadius(S.E.radius);
-      const threats = near.filter(e => Math.hypot(e.x - h.x, e.y - h.y) <= S.E.range &&
-        (k.edgeDist(e.x, e.y) <= M.freezeKeepDist || Math.hypot(e.x - h.x, e.y - h.y) <= M.freezeHeroDist));
-      if (threats.length) {
-        const c = this.cluster(near, threats[0].x, threats[0].y, r, r);
-        this.cast('E', c.count ? c.x : threats[0].x, c.count ? c.y : threats[0].y); return;
-      }
-    }
-    if (this.ready('W')) {
-      const r = h.skillRadius(S.W.radius);
-      const c = this.cluster(near, h.x, h.y, S.W.range, r);
-      if (c.count >= M.poolMin) {
-        // lead the group a little: average velocity of enemies in the pool area
-        let vx = 0, vy = 0, n = 0;
-        for (const e of near) if (Math.hypot(e.x - c.x, e.y - c.y) <= r) { vx += e.vx || 0; vy += e.vy || 0; n++; }
-        n = n || 1;
-        this.cast('W', c.x + vx / n * 0.4, c.y + vy / n * 0.4);
-      }
-    }
+  selfCount(r) { return this.near(r).length; }
+  awayFrom(list, dist) {
+    const h = this.hero;
+    let dx = 0, dy = 0;
+    for (const e of list) { const d = Math.hypot(h.x - e.x, h.y - e.y) || 1; dx += (h.x - e.x) / d; dy += (h.y - e.y) / d; }
+    const home = this.home(), hx = home.x - h.x, hy = home.y - h.y, hd = Math.hypot(hx, hy) || 1;
+    dx += hx / hd; dy += hy / hd;
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: h.x + dx / d * dist, y: h.y + dy / d * dist };
+  }
+  threatsWithin(r) { return this.near(r).filter(e => !e.def.structureBreaker); }
+  bigTarget(near, range) {
+    const h = this.hero;
+    let best = null;
+    for (const e of near) if (e.edgeDist(h.x, h.y) <= range && (!best || e.maxHp > best.maxHp)) best = e;
+    return best;
   }
 
   // ================================================================ spending
@@ -274,3 +261,87 @@ class SimBot {
     return cands.find(s => !p.wouldDisconnect(s.tx, s.ty, CONFIG.buildings.footprint)) || null;
   }
 }
+
+// Per-skill bot rules: this = the SimBot, (def, near hostiles within B.scanRange) → cast point or null. Thresholds in CONFIG.sim.bot.
+SimBot.SKILL_AI = {
+  // warrior
+  charge(def, near) {
+    const h = this.hero, f = this.focus;
+    if (this.retreating) return this.threatsWithin(this.B.retreatDashThreat).length ? this.home() : null;
+    const d = f && f.alive ? Math.hypot(f.x - h.x, f.y - h.y) : Infinity;
+    if (d > this.B.chargeMinDist && d <= def.range + 40) return f;
+    return this.lineAt(def, near, this.B.lineCluster);
+  },
+  leap(def, near) { return this.retreating ? null : this.areaAt(def, near); },
+  whirlwind(def) { return this.selfCount(this.hero.skillRadius(def.radius)) >= this.B.clusterMin ? this.hero : null; },
+  warcry(def) {
+    const h = this.hero, n = this.selfCount(h.skillRadius(def.radius));
+    return n >= this.B.clusterMin + 1 || (n && h.hp < h.maxHp * this.B.warcryHp) ? h : null;
+  },
+  hook(def, near) {
+    const h = this.hero, f = this.focus;
+    return !this.retreating && f && f.alive && Math.hypot(f.x - h.x, f.y - h.y) <= def.range * 0.9 && Math.hypot(f.x - h.x, f.y - h.y) > this.B.hookMinDist ? f : null;
+  },
+  fissure(def, near) { return this.lineAt(def, near, this.B.lineCluster); },
+  riposte() {
+    const B = this.B;
+    return this.threatsWithin(B.riposteThreat).length >= B.riposteMin || this.near(B.riposteBossRange).some(e => e.isBoss) ? this.hero : null;
+  },
+  execute(def, near) {
+    const h = this.hero;
+    let best = null;
+    for (const e of near) {
+      if (e.edgeDist(h.x, h.y) > def.range) continue;
+      const v = (1 - e.hp / e.maxHp) * e.maxHp;
+      if (e.hp / e.maxHp < this.B.executeHp && (!best || v > best.v)) best = { x: e.x, y: e.y, v };
+    }
+    return best;
+  },
+  banner(def, near) { return this.areaAt(def, near, this.B.clusterMin + 1); },
+  // mage
+  blink(def, near) {
+    const t = this.threatsWithin(this.B.blinkThreat);
+    return t.length ? this.awayFrom(t, def.range) : null;
+  },
+  freeze(def, near) { return this.areaAt(def, near); },
+  meteor(def, near) { return this.areaAt(def, near, this.B.clusterMin + 1); },
+  lightning(def, near) {
+    const h = this.hero, f = this.focus;
+    if (f && f.alive && f.edgeDist(h.x, h.y) <= def.range) return f;
+    return near.find(e => e.edgeDist(h.x, h.y) <= def.range) || null;
+  },
+  pool(def, near) { return this.areaAt(def, near); },
+  gravity(def, near) { return this.areaAt(def, near, this.B.clusterMin + 1); },
+  flamewall(def, near) { return this.areaAt({ range: def.range, radius: def.length / 2 }, near); },
+  orb(def, near) { return this.lineAt(def, near, this.B.lineCluster); },
+  polymorph(def, near) {
+    const h = this.hero, boss = near.find(e => e.isBoss && Math.hypot(e.x - h.x, e.y - h.y) <= def.range);
+    if (boss) return boss;
+    const t = this.threatsWithin(this.B.polyThreat);
+    return t.length >= this.B.clusterMin ? this.cluster(t, h.x, h.y, def.range, h.skillRadius(def.radius)) : null;
+  },
+  // archer
+  tumble(def, near) {
+    const t = this.threatsWithin(this.B.tumbleThreat);
+    return t.length ? this.awayFrom(t, def.range) : null;
+  },
+  volley(def, near) { return this.lineAt(def, near, this.B.lineCluster); },
+  pierce(def, near) { return this.lineAt(def, near); },
+  rain(def, near) { return this.areaAt(def, near); },
+  trap(def, near) {
+    const h = this.hero, f = this.focus;
+    if (!f || !f.alive || Math.hypot(f.x - h.x, f.y - h.y) > def.range) return null;
+    const lead = this.B.trapLead;
+    return { x: f.x + (f.vx || 0) * lead, y: f.y + (f.vy || 0) * lead };   // in the path of the lead enemy
+  },
+  mark(def, near) { return this.bigTarget(near, def.range); },
+  rapid(def) { const h = this.hero; return this.near(h.def.range).length ? h : null; },
+  net(def, near) {
+    const t = this.threatsWithin(this.B.netThreat);
+    return t.length ? t[0] : null;
+  },
+  snipe(def, near) {
+    const t = this.bigTarget(near, def.range);
+    return t && (t.isBoss || t.maxHp >= this.B.snipeMinHp) ? t : null;
+  },
+};

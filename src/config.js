@@ -24,11 +24,14 @@ const CONFIG = {
   startGold: 200,
 
   // ---------------------------------------------------------------- WAVES
-  // A wave tick every `interval` s (the first after `firstDelay`): enemies spawn at every enemy spawn,
-  // creeps at every lane whose first tower stands, cleared neutral camps refill, and gold is paid out.
+  // Wave 1 comes after `firstDelay` s; each next wave `clearDelay` s after the last one is wiped out (all
+  // spawned, none alive). Clearing a wave pays its enemies' XP. Separately, a tick every `tickInterval` s
+  // (the first also at `firstDelay`) spawns creeps at every lane whose first tower stands, refills cleared
+  // neutral camps and pays tick gold plus Gold Mine income.
   waves: {
-    firstDelay: 30,
-    interval: 60,
+    firstDelay: 10,
+    clearDelay: 5,
+    tickInterval: 60,
     baseCount: 15,             // enemies in wave 1 (all spawns together)
     countPerWave: 5,           // + this many per wave after
     enemyMul: 1.3,             // flat multiplier on enemy hp and damage
@@ -64,66 +67,117 @@ const CONFIG = {
   },
 
   // ---------------------------------------------------------------- HEROES
+  // perLevel: flat hp / hpRegen / damage per level; attackSpeed and speed are fractions of the base per level
+  // (speed growth capped at heroCommon.speedGrowthCap). Armor does not grow.
+  // attack: 'cleave' = every enemy in the half circle toward the target, out to cleaveReach px from the hero's edge;
+  //         'splash' = a fireball that explodes in splashRadius; 'arrow' = a fast single-target arrow.
   heroes: {
     warrior: {
-      name: 'Warrior', color: 0x3b82f6, radius: 15,
-      hp: 620, hpRegen: 3,
-      damage: 34, attackRate: 1.0, windup: 0.16, range: 34, armor: 5,
-      speed: 270, accel: 9000, acquireRange: 220,
-      perLevel: { hp: 62, damage: 3.5, armor: 0.6 },
-      melee: true,
+      name: 'Warrior', tagline: 'Melee · tank · cleaves everything in front', color: 0x3b82f6, radius: 15,
+      hp: 780, hpRegen: 5,
+      damage: 30, attackRate: 0.8, windup: 0.16, range: 34, armor: 6,
+      speed: 255, accel: 9000, acquireRange: 220,
+      perLevel: { hp: 95, hpRegen: 0.6, damage: 3.4, attackSpeed: 0.03, speed: 0.008 },
+      attack: 'cleave', cleaveReach: 60, cleaveKnock: 60, attackDesc: 'Attack: cleaves every enemy in a half circle',
     },
     mage: {
-      name: 'Mage', color: 0xa855f7, radius: 13,
-      hp: 400, hpRegen: 2,
-      damage: 26, attackRate: 0.9, windup: 0.14, range: 360, armor: 1,
-      speed: 275, accel: 9000, acquireRange: 400,
-      perLevel: { hp: 36, damage: 2.6, armor: 0.3 },
-      melee: false, projSpeed: 820,
+      name: 'Mage', tagline: 'Ranged · fragile · fast · exploding fireballs', color: 0xa855f7, radius: 13,
+      hp: 380, hpRegen: 1.5,
+      damage: 24, attackRate: 0.9, windup: 0.14, range: 340, armor: 1,
+      speed: 290, accel: 9000, acquireRange: 380,
+      perLevel: { hp: 34, hpRegen: 0.2, damage: 2.6, attackSpeed: 0.04, speed: 0.015 },
+      attack: 'splash', splashRadius: 46, projSpeed: 820, attackDesc: 'Attack: fireball that explodes in a small area',
+    },
+    archer: {
+      name: 'Archer', tagline: 'Ranged · rapid single-target arrows', color: 0x22c55e, radius: 13,
+      hp: 500, hpRegen: 2.5,
+      damage: 16, attackRate: 1.5, windup: 0.08, range: 420, armor: 3,
+      speed: 270, accel: 9000, acquireRange: 460,
+      perLevel: { hp: 50, hpRegen: 0.33, damage: 1.7, attackSpeed: 0.045, speed: 0.011 },
+      attack: 'arrow', projSpeed: 1800, attackDesc: 'Attack: very fast single-target arrow',
     },
   },
   heroCommon: {
     critChance: 0.12,
     critMult: 1.8,
+    speedGrowthCap: 0.3,     // move speed gained from levels stops at +30%
     respawnBase: 5,          // respawn = base + level seconds
-    xpRadius: 900,           // kills within this distance give XP
     skillBufferTime: 0.4,    // s a skill press is remembered while the hero is busy
+    skillPicks: 3,           // skills chosen before the run, bound to SKILL_KEYS in pick order
     // Skills scale with hero level (per level above 1)
     skillScaling: { damage: 0.08, radius: 0.015, duration: 0.025, cdr: 0.015, cdrCap: 0.3 },
     totalCdrCap: 0.6,        // level cdr + item cdr combined
   },
 
-  // cast: 'aim' = key then left-click at the cursor, 'instant' = fires on key press, 'auto' = autocast (key toggles)
-  // damage/dps scale with skillScaling.damage, radius with .radius, durations with .duration.
-  // milestones unlock extra effects at a hero level.
+  // Nine active skills per hero; the player takes heroCommon.skillPicks of them before the run (Q/W/E in pick order).
+  // cast: 'aim' = key then left-click at the cursor, 'instant' = fires on key press (toward the cursor).
+  // aim: indicator while aiming: 'circle' (range + radius), 'line' (range + width), 'cone' (range + arc),
+  //      'wall' (range + length), 'target' (an enemy near the cursor within range), 'dash' (range).
+  // Damage = skillDamage(damage) + adMul × attack damage. radius scales with skillScaling.radius, durations with .duration.
+  // icon: [shape, colour] for the HUD and the skill card. move: a movement skill (triggers Wind Cloak).
+  // utility: deals little or no damage of its own (the sim report doesn't flag its low damage share).
+  // knock values are knockback forces.
   skills: {
     warrior: {
-      // cast 'passive' = no key press; the key only names the HUD slot.
-      // cdStat: hero stat (from items) subtracted from the base cd, floored at minCd.
-      Q: { name: 'Whirl', cast: 'passive', cd: 1, chance: 0.35, radius: 90, knock: 140,
-           desc: 'Basic attacks have a chance to hit every enemy around you for your attack damage. 1s internal cooldown.' },
-      W: { name: 'Rage', cast: 'passive', cd: 80, minCd: 30, cdStat: 'rageCd', threshold: 0.05, duration: 5,
-           lifesteal: 1, damageMul: 2, critBonus: 1.0, fxInterval: 0.08,
-           desc: 'Below 5% HP (or on a killing blow): 5s of 100% lifesteal, double damage, +100% crit damage. Cannot die meanwhile.' },
-      E: { name: 'Bloodthirst', cast: 'passive', perKill: 0.1,
-           desc: 'Gain 0.1 attack damage for every enemy you kill. Kept for the whole run.' },
-      R: { name: 'Dash', cast: 'instant', cd: 12, minCd: 4, cdStat: 'dashCd', range: 200, speed: 1500, width: 22, windCloak: true,
-           desc: 'Dash toward the cursor. Enemies you pass and enemies around the landing spot take a critical Whirl.' },
+      charge:    { name: 'Charge', cast: 'aim', aim: 'dash', cd: 10, range: 320, speed: 1400, width: 26, minDist: 80, damage: 30, adMul: 1, stun: 1, knock: 260, move: true,
+                   icon: ['triangle', 0x9cc8ff], desc: 'Rush toward the cursor. The first enemy hit is stunned for 1s; everyone in the way is hit and shoved aside.' },
+      leap:      { name: 'Leap Slam', cast: 'aim', aim: 'circle', cd: 12, range: 300, radius: 110, airTime: 0.45, damage: 50, adMul: 1.2, knock: 300, move: true,
+                   icon: ['hexagon', 0xffb347], desc: 'Jump to a spot. The landing hits everything around and knocks it away.' },
+      whirlwind: { name: 'Whirlwind', cast: 'instant', cd: 14, duration: 3, radius: 95, tick: 0.3, adMul: 0.5, moveMul: 0.75, knock: 40,
+                   icon: ['circle', 0x7ee8ff], desc: 'Spin for 3s, hitting everything around you several times a second. You can move, slowly.' },
+      warcry:    { name: 'War Cry', cast: 'instant', cd: 18, radius: 230, duration: 3, reduction: 0.5, utility: true,
+                   icon: ['diamond', 0xff6040], desc: 'Taunt every enemy nearby for 3s and take 50% less damage meanwhile.' },
+      hook:      { name: 'Chain Hook', cast: 'aim', aim: 'line', cd: 9, range: 420, width: 12, speed: 1300, damage: 50, adMul: 1, stun: 0.6, pullStun: 0.25, bossSlow: 0.5, bossSlowTime: 2,
+                   pullSpeed: 1400, pullTime: 0.5, utility: true,
+                   icon: ['triangle', 0xc0c6d0], desc: 'Throw a chain. The first enemy hit is dragged to you and stunned (bosses are only slowed).' },
+      fissure:   { name: 'Fissure', cast: 'aim', aim: 'line', cd: 11, range: 460, width: 42, speed: 900, damage: 55, adMul: 0.8, slow: 0.5, slowTime: 2, knock: 60, fade: 1.2,
+                   icon: ['square', 0x9a6b3f], desc: 'A shockwave runs along the ground, hitting and slowing everything it crosses.' },
+      riposte:   { name: 'Riposte', cast: 'instant', cd: 15, duration: 1.5, range: 190, arc: 2.1, damage: 40, adMul: 1, reflect: 2, knock: 220,
+                   icon: ['diamond', 0xe8d9a0], desc: 'Block all damage for 1.5s, then release a cone blast: base damage plus twice what you blocked.' },
+      execute:   { name: 'Execute', cast: 'aim', aim: 'target', cd: 8, range: 260, speed: 1500, damage: 40, adMul: 2, missingMul: 3, overshoot: 60, knock: 120,
+                   icon: ['triangle', 0xd02020], desc: 'Leap at an enemy for one huge strike, up to 4x stronger at low HP. A kill resets the cooldown.' },
+      banner:    { name: 'War Banner', cast: 'aim', aim: 'circle', cd: 25, range: 400, radius: 190, duration: 8, atkSpeed: 0.4, vuln: 0.25, utility: true,
+                   icon: ['square', 0xffd23f], desc: 'Plant a banner for 8s: you and your creeps inside attack 40% faster, enemies inside take 25% more damage.' },
     },
     mage: {
-      Q: { name: 'Fire Bolt', cast: 'auto', cd: 4, damage: 55, aoe: 70, speed: 950, range: 760,
-           milestones: [{ id: 'pierce1', level: 4, text: 'Pierces 1 enemy' }, { id: 'pierce2', level: 8, text: 'Pierces 2 enemies' }],
-           desc: 'Autocasts at the enemy you are attacking. Explodes on hit. Q toggles autocast.' },
-      W: { name: 'Poison Pool', cast: 'aim', windCloak: true, cd: 9, dps: 30, radius: 110, duration: 5, range: 450, tick: 0.5, slow: 0.7,
-           milestones: [{ id: 'slow', level: 6, text: 'Pool also slows enemies by 30%' }],
-           desc: 'Poison the ground at the cursor: damage per second to enemies inside.' },
-      E: { name: 'Deep Freeze', cast: 'aim', cd: 12, damage: 30, radius: 160, range: 500, freeze: 1.5, shatterDamage: 60,
-           milestones: [{ id: 'shatter', level: 10, text: 'Frozen enemies shatter when the freeze ends' }],
-           desc: 'Freeze enemies in an area at the cursor, rooting them in place.' },
-      R: { name: 'Meteor Storm', cast: 'aim', cd: 60, damage: 90, meteors: 6, radius: 200, meteorRadius: 72, range: 620, duration: 3, warn: 0.6,
-           bonusMeteorMul: 1.5,
-           milestones: [{ id: 'more', level: 10, text: '+50% meteors' }],
-           desc: 'Meteors rain on an area over 3s. Each one is telegraphed.' },
+      blink:     { name: 'Blink', cast: 'aim', aim: 'dash', cd: 8, range: 300, radius: 120, damage: 60, slow: 0.5, slowTime: 2, move: true,
+                   icon: ['diamond', 0xc77dff], desc: 'Teleport a short distance. The spot you left bursts in a frost nova that hits and slows.' },
+      freeze:    { name: 'Deep Freeze', cast: 'aim', aim: 'circle', cd: 12, range: 500, radius: 150, damage: 35, freeze: 1.5,
+                   icon: ['hexagon', 0x5ee0ff], desc: 'Freeze enemies in an area, rooting them in place.' },
+      meteor:    { name: 'Meteor', cast: 'aim', aim: 'circle', cd: 16, range: 620, radius: 130, warn: 1, damage: 190, knock: 220, burnDps: 35, burnTime: 3, tick: 0.5,
+                   icon: ['circle', 0xff5030], desc: 'One meteor, telegraphed for 1s. Huge area damage, and the ground burns for 3s.' },
+      lightning: { name: 'Chain Lightning', cast: 'aim', aim: 'target', cd: 7, range: 560, damage: 95, jumps: 6, jumpRange: 230, falloff: 0.85,
+                   icon: ['triangle', 0x7ee8ff], desc: 'A bolt that jumps between up to 7 enemies, a little weaker with each jump.' },
+      pool:      { name: 'Poison Pool', cast: 'aim', aim: 'circle', cd: 10, range: 450, radius: 110, duration: 5, dps: 30, tick: 0.5, slow: 0.7,
+                   icon: ['circle', 0x7cd63c], desc: 'Poison the ground for 5s: damage over time and a 30% slow.' },
+      gravity:   { name: 'Gravity Well', cast: 'aim', aim: 'circle', cd: 20, range: 520, radius: 210, duration: 2.5, pull: 230, implodeRadius: 120, damage: 120,
+                   icon: ['hexagon', 0x6b4dca], desc: 'A singularity pulls enemies to its centre for 2.5s, then implodes.' },
+      flamewall: { name: 'Flame Wall', cast: 'aim', aim: 'wall', cd: 14, range: 480, length: 280, width: 30, duration: 4, dps: 85, tick: 0.25,
+                   icon: ['square', 0xff7a2a], desc: 'Raise a wall of fire across the cursor for 4s. Enemies crossing it burn.' },
+      orb:       { name: 'Arcane Orb', cast: 'aim', aim: 'line', cd: 9, range: 720, width: 26, speed: 360, damage: 80, burstRadius: 120, burstDamage: 130, burstKnock: 160,
+                   icon: ['circle', 0xd8b4fe], desc: 'A slow orb pierces everything in a line, then bursts. Press the key again to burst it early.' },
+      polymorph: { name: 'Polymorph', cast: 'aim', aim: 'circle', cd: 18, range: 480, radius: 95, duration: 2.5, bossDuration: 1, critterSpeed: 60, utility: true,
+                   icon: ['circle', 0xff9ad5], desc: 'Turn enemies in a small area into harmless critters for 2.5s (bosses 1s).' },
+    },
+    archer: {
+      tumble:    { name: 'Tumble', cast: 'aim', aim: 'dash', cd: 6, range: 170, speed: 1100, critWindow: 3, move: true, utility: true,
+                   icon: ['triangle', 0x86efac], desc: 'Roll toward the cursor. Your next attack within 3s is a guaranteed critical hit.' },
+      volley:    { name: 'Volley', cast: 'aim', aim: 'cone', cd: 8, range: 520, arc: 0.9, arrows: 9, speed: 1300, damage: 30, adMul: 0.8,
+                   icon: ['triangle', 0xfacc15], desc: 'Fire a fan of 9 arrows in a cone.' },
+      pierce:    { name: 'Piercing Shot', cast: 'aim', aim: 'line', cd: 9, range: 950, width: 10, speed: 2400, damage: 90, adMul: 1.5, knock: 90,
+                   icon: ['diamond', 0xe5e7eb], desc: 'A long-range arrow that hits every enemy in a line.' },
+      rain:      { name: 'Arrow Rain', cast: 'aim', aim: 'circle', cd: 14, range: 560, radius: 140, duration: 3, dps: 40, tick: 0.25, slow: 0.6,
+                   icon: ['hexagon', 0xa3e635], desc: 'Arrows rain on an area for 3s, hitting and slowing everything inside.' },
+      trap:      { name: 'Explosive Trap', cast: 'aim', aim: 'circle', cd: 6, range: 420, radius: 110, trigger: 34, arm: 0.5, life: 45, max: 3, damage: 110, root: 1.5,
+                   icon: ['square', 0xf97316], desc: 'Place a trap (up to 3). The first enemy to step on it sets off an explosion that roots everything nearby.' },
+      mark:      { name: "Hunter's Mark", cast: 'aim', aim: 'target', cd: 12, range: 700, duration: 8, vuln: 0.3, jumpRange: 320, utility: true,
+                   icon: ['diamond', 0xef4444], desc: 'Mark an enemy: it takes 30% more damage from everything. If it dies, the mark jumps to the nearest enemy.' },
+      rapid:     { name: 'Rapid Fire', cast: 'instant', cd: 16, duration: 4, atkSpeed: 1, utility: true,
+                   icon: ['circle', 0xfde047], desc: '4s of double attack speed, and you can shoot while moving.' },
+      net:       { name: 'Net Shot', cast: 'aim', aim: 'line', cd: 10, range: 460, width: 14, speed: 1500, damage: 60, adMul: 1, root: 2, netRadius: 60, splashRoot: 0.6, recoil: 220, recoilSpeed: 1100, move: true,
+                   icon: ['hexagon', 0xd6d3d1], desc: 'Fire a net that roots the first enemy hit (and those next to it) and throws you backward.' },
+      snipe:     { name: 'Snipe', cast: 'aim', aim: 'target', cd: 20, range: 1400, channel: 1, damage: 260, adMul: 6, knock: 200,
+                   icon: ['triangle', 0xffffff], desc: 'Aim for 1s, then a massive shot at one enemy from very far away.' },
     },
   },
 
@@ -185,7 +239,6 @@ const CONFIG = {
 
   // ---------------------------------------------------------------- ITEMS
   // Gained on level-up: pick 1 of itemPickCount random items. Picking an owned item levels it up (stats add again).
-  // `hero` limits an item to one hero's pool.
   items: {
     sword:   { name: 'Iron Sword',      color: 0xc0c6d0, shape: 'triangle', stats: { damage: 12 },               desc: '+12 damage' },
     gloves:  { name: 'Swift Gloves',    color: 0xf2c14e, shape: 'circle',   stats: { attackSpeed: 0.2 },         desc: '+20% attack speed' },
@@ -198,18 +251,14 @@ const CONFIG = {
     thorns:  { name: 'Thorn Mail',      color: 0x4f8a3a, shape: 'hexagon',  stats: { armor: 5, thorns: 0.35 },   desc: '+5 armor, reflect 35% melee damage' },
     phoenix: { name: 'Phoenix Feather', color: 0xff7a2a, shape: 'triangle', stats: { revive: 1 },                desc: 'Revive at 50% HP instead of dying. Cooldown 180s / level' },
     focus:   { name: 'Arcane Focus',    color: 0xc77dff, shape: 'circle',   stats: { skillDamage: 0.25 },        desc: '+25% skill damage' },
-    cloak:   { name: 'Wind Cloak',      color: 0x9be8c9, shape: 'diamond',  stats: { speed: 15, windCloak: 0.4 },desc: '+15 speed. After Dash (Warrior) / Poison Pool (Mage): +40% speed for 2s' },
-    whirl:   { name: 'Whirl Edge',      color: 0x9cc8ff, shape: 'circle',   hero: 'warrior', stats: { whirlChance: 0.1, whirlRadius: 0.1 }, desc: 'Whirl: +10% chance, +10% radius' },
-    greaves: { name: 'Charger Greaves', color: 0x6a8fd0, shape: 'square',   hero: 'warrior', stats: { dashRange: 0.15, dashCd: 1 },     desc: 'Dash: +15% range, -1s cooldown (min 4s)' },
-    trophy:  { name: 'Trophy Belt',     color: 0xd8a03a, shape: 'hexagon',  hero: 'warrior', stats: { killDamage: 0.05 },               desc: 'Bloodthirst: +0.05 damage per kill' },
-    mask:    { name: 'Berserker Mask',  color: 0xd02020, shape: 'triangle', hero: 'warrior', stats: { rageTime: 1, rageCd: 8 },         desc: 'Rage: +1s duration, -8s cooldown (min 30s)' },
+    cloak:   { name: 'Wind Cloak',      color: 0x9be8c9, shape: 'diamond',  stats: { speed: 15, windCloak: 0.4 },desc: '+15 speed. After a movement skill: +40% speed for 2s' },
   },
-  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'heart', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak', 'whirl', 'greaves', 'trophy', 'mask'],
+  itemOrder: ['sword', 'gloves', 'boots', 'plate', 'heart', 'hourglass', 'fang', 'storm', 'thorns', 'phoenix', 'focus', 'cloak'],
   itemPickCount: 3,
   itemPickOwnedWeight: 1,   // pick weight = 1 + item level x this (owned items show up more)
   itemCaps: { cdr: 0.4, lifesteal: 0.5 },
   phoenixCooldown: 180,     // s, divided by Phoenix level
-  windCloakTime: 2,         // s of Wind Cloak speed after a windCloak skill
+  windCloakTime: 2,         // s of Wind Cloak speed after a movement skill
 
   // ---------------------------------------------------------------- FEEL
   feel: {
@@ -220,35 +269,50 @@ const CONFIG = {
   score: { perWave: 150, perKill: 3, perLevel: 75, perSecond: 0.75, bestKey: 'cd_best_hard' },   // key name kept so best scores from the old Hard mode carry over
 
   // ---------------------------------------------------------------- BALANCE SIMULATION
-  // Headless only (tools/simpar.mjs). A bot plays every selected hero × strategy × seed in the real GameScene.
+  // Headless only (tools/simpar.mjs). A bot plays every selected hero × loadout × strategy × seed in the real GameScene.
   sim: {
     step: 1 / 30,            // fixed sim tick (s). Kept below the game's 0.05 clamp so Charge/skillshots don't tunnel.
     frameBudgetMs: 14,       // real ms per frame spent stepping the simulation (at 60 fps)
     defaultSeeds: 3,
-    defaultWaveCap: 30,      // waves are one minute apart: the cap is roughly minutes survived
+    defaultWaveCap: 30,      // a run that clears this many waves ends as "cap"
     baseSeed: 1000,          // seed index i uses baseSeed + i (same seeds for every combination)
+    stallTime: 240,          // a wave still alive after this many s ends the run as "stalled"
 
     bot: {
       thinkEvery: 0.25,      // s between movement decisions
       skillEvery: 0.1,       // s between skill checks
       retreatHp: 0.3,        // fall back to the Keep below this HP fraction...
       resumeHp: 0.65,        // ...and return to the fight above this one
-      warrior: {
-        dashMinDist: 120,      // Dash toward the focus enemy when it is farther than this...
-        dashCluster: 3,        // ...or through a cluster this big
-      },
-      mage: {
-        poolMin: 3,
-        freezeKeepDist: 260,   // freeze enemies this close to the Keep...
-        freezeHeroDist: 130,   // ...or this close to the hero
-        ultMin: 6,
-      },
+      clusterMin: 3,         // area skills wait for this many enemies (or a boss)
+      scanRange: 900,        // skill rules consider hostiles within this many px
+      lineMin: 2,            // line skills wait for this many enemies in a lane (or a boss, or the focus in range)
+      lineCluster: 3,        // ...this many for the wide line skills (Charge, Fissure, Arcane Orb, Volley)
+      chargeMinDist: 120,    // Charge at the focus enemy when it is farther than this
+      retreatDashThreat: 140,  // while retreating, dash home when a threat is this close
+      hookMinDist: 90,       // Chain Hook only pulls enemies farther than this
+      warcryHp: 0.6,         // War Cry with any enemy near once below this HP fraction
+      riposteThreat: 120, riposteMin: 2, riposteBossRange: 200,
+      executeHp: 0.6,        // Execute targets below this HP fraction
+      blinkThreat: 110,      // Blink away from threats this close...
+      tumbleThreat: 130,     // ...Tumble away from these
+      polyThreat: 160,       // Polymorph a pack this close to the hero
+      netThreat: 160,        // Net Shot the nearest threat this close
+      trapLead: 0.6,         // s of the lead enemy's movement to place a trap ahead of it
+      snipeMinHp: 150,       // Snipe only bosses or enemies with this much max HP
+    },
+
+    // Skill loadouts the bot plays (every job runs once per loadout). Skill ids from CONFIG.skills[hero], Q/W/E in order.
+    loadouts: {
+      warrior: { bruiser: ['charge', 'whirlwind', 'execute'], control: ['hook', 'warcry', 'fissure'], leader: ['leap', 'banner', 'riposte'] },
+      mage: { burst: ['meteor', 'lightning', 'orb'], control: ['freeze', 'gravity', 'pool'], zone: ['blink', 'flamewall', 'polymorph'] },
+      archer: { hunter: ['mark', 'snipe', 'rapid'], skirmish: ['tumble', 'volley', 'net'], siege: ['pierce', 'rain', 'trap'] },
     },
 
     // Item pick priority per hero: on level-up the bot takes the first offered item in this list (else the first offered).
     itemBuilds: {
-      warrior: ['sword', 'whirl', 'plate', 'gloves', 'fang', 'trophy', 'heart', 'mask', 'thorns', 'greaves', 'storm', 'hourglass', 'focus', 'phoenix', 'boots', 'cloak'],
+      warrior: ['sword', 'plate', 'gloves', 'fang', 'heart', 'thorns', 'storm', 'hourglass', 'focus', 'phoenix', 'boots', 'cloak'],
       mage: ['focus', 'gloves', 'hourglass', 'heart', 'sword', 'storm', 'fang', 'plate', 'phoenix', 'boots', 'thorns', 'cloak'],
+      archer: ['gloves', 'sword', 'storm', 'fang', 'heart', 'hourglass', 'focus', 'plate', 'phoenix', 'boots', 'thorns', 'cloak'],
     },
 
     // Spending policies. The bot runs `opening` once, then repeats `loop`, saving up for each step.
@@ -265,16 +329,19 @@ const CONFIG = {
 
     // Report flags
     flags: {
-      heroRatio: 1.3,          // one hero survives this × longer than the other
+      heroRatio: 1.1,          // one class (median loadout) survives this × longer than another
       strategyRatio: 1.5,      // best strategy vs median strategy (same hero)
       idleShare: 0.85,         // idle hero reaches this fraction of the best active strategy → hero matters little
       towerValueRatio: 2,      // tower damage-per-gold this × above/below the median tower
-      lowSkillShare: 0.04,     // a skill doing less than this share of hero damage
+      lowSkillShare: 0.04,     // a skill doing less than this share of hero damage (in the runs that took it)
       keepDamageShare: 0.5,    // one enemy type dealing more than this share of Keep damage
       earlyLossWave: 5,        // any run lost before this wave
     },
   },
 };
+
+// Each skill def knows its own id (damage tags, the sim report)
+for (const hero in CONFIG.skills) for (const id in CONFIG.skills[hero]) CONFIG.skills[hero][id].id = id;
 
 // Convenience tile → pixel helpers
 CONFIG.px = (t) => t * CONFIG.TILE;

@@ -87,6 +87,7 @@ class Enemy extends Unit {
     this.atkCd -= dt;
 
     if (this.stunned) { this.vx = 0; this.vy = 0; this.syncGfx(); return; }
+    if (this.status.polyT > 0) { this.wander(dt); this.syncGfx(); return; }
 
     if (this.slam) { this.updateSlam(dt); this.syncGfx(); return; }
     if (this.neutral) { this.updateNeutral(dt); this.syncGfx(); return; }
@@ -122,6 +123,14 @@ class Enemy extends Unit {
       this.followFlow(sp, dt);
     }
     this.syncGfx();
+  }
+
+  // Polymorphed: a harmless critter hopping around (no attacks, a boss's slam fizzles).
+  wander(dt) {
+    if (this.slam) { this.slam.g.destroy(); this.slam = null; }
+    this.wanderT = (this.wanderT || 0) - dt;
+    if (this.wanderT <= 0) { this.wanderT = 0.4 + Math.random() * 0.4; this.wanderA = Math.random() * Math.PI * 2; }
+    this.steer(Math.cos(this.wanderA), Math.sin(this.wanderA), CONFIG.skills.mage.polymorph.critterSpeed, dt, 1500);
   }
 
   // Neutral: idle at the camp; once provoked, fight the hero until leashed, then walk home healing.

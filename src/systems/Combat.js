@@ -11,8 +11,8 @@ const Combat = {
     if (!target || !target.alive || target.invulnerable) return 0;
     const src = opts.source;
     if (target.neutral && !(src && src.isHero)) return 0;   // only the hero fights neutral camps
-    const rage = src && src.isHero ? src.rage : null;   // Warrior Rage
-    if (rage) amount *= rage.damageMul;
+    if (target.isHero) { amount = target.kit.onIncoming(amount, opts); if (amount <= 0) return 0; }   // War Cry, Riposte
+    if (target.vulnMul) amount *= target.vulnMul;   // War Banner, Hunter's Mark
     const armor = target.getArmor ? target.getArmor() : (target.armor || 0);
     let dmg = amount * this.armorMul(armor);
     if (target.isStructure && opts.structureMul) dmg *= opts.structureMul;
@@ -32,8 +32,8 @@ const Combat = {
 
     if (opts.knock && target.applyKnock) target.applyKnock(opts.knock.x, opts.knock.y, opts.knock.force);
 
-    // lifesteal: hero attacks, or all hero damage during Rage
-    const ls = rage ? rage.lifesteal : src && src.isHero && opts.isAttack ? src.stats.lifesteal : 0;
+    // lifesteal: hero basic attacks
+    const ls = src && src.isHero && opts.isAttack ? src.stats.lifesteal : 0;
     if (ls > 0 && src.alive) src.heal(dmg * ls);
     // thorns (hero hit by melee)
     if (target.isHero && opts.melee && src && src.alive && target.stats.thorns > 0) {

@@ -38,7 +38,7 @@ All coordinates are **game coordinates**: the 1280×720 canvas space that `CONFI
 
 | Command | Use |
 | --- | --- |
-| `start <warrior\|mage>` | Clicks the hero card and START on `MenuScene`, then waits for `GameScene` and `UIScene` |
+| `start <warrior\|mage\|archer> [id,id,id]` | Clicks the hero card, SKILLS, the listed skills (default: the first three) and START on `MenuScene`, then waits for `GameScene` and `UIScene` |
 | `state` | Compact JSON with active scenes, hero (pos, hp, level, xp, cooldowns, aiming, order, items), keep, gold, wave/nextWaveIn, enemy/neutral/ally counts, lane towers, buildings, placing/selected, picks, paused/ended, stats, camera |
 | `key <Code> [--down\|--up] [--hold ms]` | A real key event by `KeyboardEvent.code`: `KeyQ`…`KeyR`, `KeyA`, `KeyS`, `KeyV`, `KeyU`, `KeyP`, `KeyM`, `Digit1`…`Digit4`, `Enter`, `Escape`, `Space` |
 | `move x y` / `click x y [left\|right]` | Mouse input at screen (HUD) coordinates |
@@ -49,14 +49,12 @@ All coordinates are **game coordinates**: the 1280×720 canvas space that `CONFI
 | `logs [--clear]` | Console errors and warnings plus uncaught exceptions since launch |
 
 Key HUD positions in game coordinates, from `MenuScene` and `UIScene`:
-- Menu: Warrior card centre (480,300), Mage card centre (800,300), START (640,597).
-- In game: pause (1254,16), minimap bottom-left (8..184, ~616..712; left-click moves the camera), BUILD (1240,78), KEEP upgrade (1240,143), Mage/Warrior skill icons Q/W/E/R at (638|704|770|836, 668), build panel column x=1164 with rows at y=79+62·i in `BUILD_TYPES` order, and item pick cards centred at (442|639|836, 271).
+- Menu: hero cards centred at (320|640|960, 330), SKILLS ▸ then START at (640,597); skill cards on a 3×3 grid (see `cdg.mjs` `start`).
+- In game: pause (1254,16), minimap bottom-left (8..184, ~616..712; left-click moves the camera), BUILD (1240,78), KEEP upgrade (1240,143), skill icons Q/W/E at (662|742|822, 668), build panel column x=1164 with rows at y=79+62·i in `BUILD_TYPES` order, and item pick cards centred at (442|639|836, 271).
 
-Skill input follows `CONFIG.skills[hero][key].cast`:
+Skill input follows `CONFIG.skills[hero][id].cast` for the skill bound to the key (`hero.skillIds`):
 - `aim`: press the key with the mouse anywhere, then left-click (`wclick`) the target.
 - `instant`: hover the target with `wmove`, then press the key.
-- `auto`: the key toggles autocast.
-- `passive`: the key does nothing.
 
 The feature recipes live in [`features/README.md`](features/README.md). Read the index, then the matching feature file.
 
@@ -70,7 +68,7 @@ Write proof to `.verify/artifacts/<feature-id>/`, which git ignores. A proof con
 
 Drive the real player path with keys and clicks. Use `eval` to read state and find targets, never to cause the behaviour under test. Calling `gs.waves.tick()`, `picks.pick()` or setting `hero.x` directly proves nothing about input, the HUD or `isOverUI`. If you must use a setter as setup to reach a precondition, such as dropping keep HP to reach game over, say so in the report and still drive the step under test through input.
 
-The game runs in real time and can't be fast-forwarded through input. A wave-1 level-up takes about 35–40 s. For balance and long-run questions, run the headless balance sim (`node tools/simpar.mjs`, see README), not this harness.
+The game runs in real time and can't be fast-forwarded through input. The first level-up comes when wave 1 is cleared, about 30 s in. For balance and long-run questions, run the headless balance sim (`node tools/simpar.mjs`, see README), not this harness.
 
 ## Cleanup
 

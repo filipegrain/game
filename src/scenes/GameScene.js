@@ -5,6 +5,7 @@ class GameScene extends Phaser.Scene {
 
   init(data) {
     this.heroKey = data.hero || 'warrior';
+    this.loadout = data.skills || Object.keys(CONFIG.skills[this.heroKey]).slice(0, CONFIG.heroCommon.skillPicks);   // skill ids, Q/W/E in order
     this.simJob = data.sim || null;     // balance simulation run (see SimRunner)
   }
 
@@ -35,7 +36,7 @@ class GameScene extends Phaser.Scene {
 
     this.keep = new Keep(this);
     CONFIG.map.towers.forEach((lane, li) => lane.forEach((def, i) => this.towers.push(new Tower(this, li, i, def))));
-    this.hero = new Hero(this, this.heroKey, this.keep.front.x, this.keep.front.y);
+    this.hero = new Hero(this, this.heroKey, this.loadout, this.keep.front.x, this.keep.front.y);
     this.economy = new Economy(this, CONFIG.startGold);
     this.leveling = new Leveling(this, this.hero);
     this.picks = new ItemPicks(this, this.hero);
@@ -269,7 +270,7 @@ class GameScene extends Phaser.Scene {
     if (code === 'Space') { this.spaceHeld = true; return; }
     if (this.paused || this.picks.choices) return;
 
-    const skillKey = { KeyQ: 'Q', KeyW: 'W', KeyE: 'E', KeyR: 'R' }[code];
+    const skillKey = { KeyQ: 'Q', KeyW: 'W', KeyE: 'E' }[code];
     if (skillKey) {
       if (e.repeat || mod) return;
       const w = this.pointerWorld();
@@ -396,12 +397,10 @@ class GameScene extends Phaser.Scene {
 
   onEnemyKilled(e, killer) {
     this.stats.kills++;
-    if (killer === this.hero) { this.hero.kills++; if (this.hero.kit.onKill) this.hero.kit.onKill(e); }
+    if (killer === this.hero) this.hero.kills++;
     this.economy.add(e.gold, e.x, e.y - e.radius - 4);
     if (this.recorder) this.recorder.goldEarned('bounty', e.gold);
-    const h = this.hero;
-    if (h.alive && Math.hypot(h.x - e.x, h.y - e.y) <= CONFIG.heroCommon.xpRadius) this.leveling.addXp(e.xp);
-    else this.leveling.addXp(e.xp * 0.25);
+    if (e.neutral) this.leveling.addXp(e.xp);   // wave enemies pay their XP when the whole wave is cleared (WaveManager)
   }
 
   ping(x, y, color) { this.pings.push({ x, y, color, t: 2.5 }); }
@@ -420,7 +419,7 @@ class GameScene extends Phaser.Scene {
     const newBest = score > best;
     if (newBest) { try { localStorage.setItem(key, String(score)); } catch (e) { /* ignore */ } best = score; }
     const data = {
-      hero: this.heroKey, waves: s.wavesCleared, reached: this.waves.wave,
+      hero: this.heroKey, skills: this.loadout, waves: s.wavesCleared, reached: this.waves.wave,
       time: s.time, kills: s.kills, level: this.hero.level, score, best, newBest,
     };
     this.cameras.main.flash(400, 255, 80, 60);

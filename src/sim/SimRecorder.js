@@ -10,7 +10,7 @@ class SimRecorder {
     this.heroDamage = {};    // enemy type -> damage dealt to the hero
     this.allyDamageTaken = 0;
     this.structureDamage = {};   // enemy type -> damage dealt to lane towers and buildings
-    this.casts = { Q: 0, W: 0, E: 0, R: 0 };
+    this.casts = {};         // skill id -> casts
     this.heroDeaths = [];    // [wave, time, level]
     this.revives = 0;
     this.goldIn = { bounty: 0, tick: 0, mines: 0 };
@@ -23,7 +23,7 @@ class SimRecorder {
     const ev = scene.events, subs = [];
     const on = (name, fn) => { ev.on(name, fn); subs.push([name, fn]); };
     ev.once('shutdown', () => subs.forEach(([n, f]) => ev.off(n, f)));
-    on('skillCast', (k) => { this.casts[k]++; });
+    on('skillCast', (k) => { const id = scene.hero.skillIds[k]; this.casts[id] = (this.casts[id] || 0) + 1; });
     on('heroDied', () => { const h = scene.hero; this.heroDeaths.push([this.wave(), Math.round(scene.stats.time), h.level]); });
     on('heroRevived', () => { this.revives++; });
     on('waveStart', (n) => {
@@ -86,7 +86,7 @@ class SimRecorder {
     const towers = {};
     for (const b of sc.buildings) if (b.alive) towers[b.type] = (towers[b.type] || []).concat(b.level);
     return JSON.parse(JSON.stringify({
-      hero: sc.heroKey, strategy: sc.simJob.strategy, seed: sc.simJob.seed,
+      hero: sc.heroKey, loadout: sc.simJob.loadout, strategy: sc.simJob.strategy, seed: sc.simJob.seed,
       end: reason, wavesCleared: sc.stats.wavesCleared, reachedWave: sc.waves.wave,
       time: Math.round(sc.stats.time), kills: sc.stats.kills,
       heroLevel: h.level, keepTier: sc.keep.tier, keepHpPct: Math.round(Math.max(0, sc.keep.hp) / sc.keep.maxHp * 100),

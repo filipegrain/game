@@ -5,15 +5,18 @@ const SimReport = {
   median(a) { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; },
   sumInto(dst, src) { for (const k in src) dst[k] = (dst[k] || 0) + src[k]; return dst; },
   pct(x, total) { return total > 0 ? Math.round(x / total * 1000) / 10 : 0; },
-  heroName(k) { return CONFIG.heroes[k] ? CONFIG.heroes[k].name : k; },
+  // k: a hero key or a build 'hero/loadout'
+  heroName(k) { const [h, l] = k.split('/'); return (CONFIG.heroes[h] ? CONFIG.heroes[h].name : h) + (l ? ' · ' + l : ''); },
+  skillName(h, id) { return CONFIG.skills[h] && CONFIG.skills[h][id] ? CONFIG.skills[h][id].name : id; },
+  isSkillDamage(k) { return k.startsWith('hero:') && !['hero:attack', 'hero:chain', 'hero:thorns'].includes(k); },
   stratName(k) { return CONFIG.sim.strategies[k] ? CONFIG.sim.strategies[k].label : k; },
 
   // ------------------------------------------------------------------ aggregate
   build(runs, settings, meta) {
     const combos = {};
     for (const r of runs) {
-      const key = r.hero + '|' + r.strategy;
-      (combos[key] = combos[key] || { hero: r.hero, strategy: r.strategy, runs: [] }).runs.push(r);
+      const build = r.hero + '/' + r.loadout, key = build + '|' + r.strategy;   // build = 'hero/loadout'
+      (combos[key] = combos[key] || { build, hero: r.hero, strategy: r.strategy, runs: [] }).runs.push(r);
     }
     const list = Object.values(combos).map(c => this.aggregate(c, settings));
     const report = {
@@ -52,7 +55,7 @@ const SimReport = {
     }
     for (const k in firstItem) firstItem[k] = Math.round(this.mean(firstItem[k]) * 10) / 10;
     return {
-      hero: c.hero, strategy: c.strategy, n: R.length,
+      build: c.build, hero: c.hero, strategy: c.strategy, n: R.length,
       waves: { mean: Math.round(this.mean(waves) * 10) / 10, min: Math.min(...waves), max: Math.max(...waves) },
       capped: R.filter(r => r.end === 'cap').length, stalled: R.filter(r => r.end === 'stalled').length,
       errors: R.filter(r => r.end === 'error').length, errorText: (R.find(r => r.error) || {}).error || '',
@@ -78,18 +81,22 @@ const SimReport = {
     return out;
   },
 
-  // Per hero: casts, damage per cast, share of hero damage (active-hero runs only).
+  // Per hero class and skill id: casts, damage per cast, share of hero damage in the runs that took it (active-hero runs only).
   skillTable(runs) {
     const out = {};
     for (const r of runs) {
       if (CONFIG.sim.strategies[r.strategy] && CONFIG.sim.strategies[r.strategy].hero === 'idle') continue;
       const o = out[r.hero] = out[r.hero] || { minutes: 0, heroDamage: 0, keys: {} };
+      let heroDmg = 0;
+      for (const k in r.damage) if (k.startsWith('hero:')) heroDmg += r.damage[k];
       o.minutes += r.time / 60;
-      for (const k in r.damage) if (k.startsWith('hero:')) o.heroDamage += r.damage[k];
-      for (const k of ['Q', 'W', 'E', 'R']) {
-        const s = o.keys[k] = o.keys[k] || { casts: 0, damage: 0 };
-        s.casts += r.casts[k] || 0;
-        s.damage += r.damage['hero:' + k] || 0;
+      o.heroDamage += heroDmg;
+      for (const id of CONFIG.sim.loadouts[r.hero][r.loadout]) {
+        const s = o.keys[id] = o.keys[id] || { casts: 0, damage: 0, minutes: 0, ofHero: 0 };
+        s.casts += r.casts[id] || 0;
+        s.damage += r.damage['hero:' + id] || 0;
+        s.minutes += r.time / 60;
+        s.ofHero += heroDmg;
       }
       const a = o.keys.attack = o.keys.attack || { casts: 0, damage: 0 };
       a.damage += (r.damage['hero:attack'] || 0) + (r.damage['hero:chain'] || 0);
@@ -99,8 +106,8 @@ const SimReport = {
       for (const k in o.keys) {
         const s = o.keys[k];
         s.perCast = s.casts ? Math.round(s.damage / s.casts) : 0;
-        s.perMin = o.minutes ? Math.round(s.casts / o.minutes * 10) / 10 : 0;
-        s.share = this.pct(s.damage, o.heroDamage);
+        s.perMin = (s.minutes || o.minutes) ? Math.round(s.casts / (s.minutes || o.minutes) * 10) / 10 : 0;
+        s.share = this.pct(s.damage, s.ofHero || o.heroDamage);
       }
     }
     return out;
@@ -109,24 +116,27 @@ const SimReport = {
   // ------------------------------------------------------------------ flags
   flags(rep) {
     const F = CONFIG.sim.flags, flags = [], C = rep.combos;
-    const get = (h, s) => C.find(c => c.hero === h && c.strategy === s);
-    const heroes = [...new Set(C.map(c => c.hero))];
+    const get = (h, s) => C.find(c => c.build === h && c.strategy === s);
+    const builds = [...new Set(C.map(c => c.build))];
     const strats = [...new Set(C.map(c => c.strategy))];
     const active = strats.filter(s => CONFIG.sim.strategies[s].hero !== 'idle');
     const cap = rep.settings.waveCap;
     const add = (severity, area, text) => flags.push({ severity, area, text });
 
-    // hero vs hero
-    if (heroes.length >= 2) {
-      const avg = (h) => this.mean(active.map(s => get(h, s)).filter(Boolean).map(c => c.waves.mean));
-      const [a, b] = heroes, wa = avg(a), wb = avg(b);
-      if (wa && wb) {
-        const hi = wa >= wb ? a : b, ratio = Math.max(wa, wb) / Math.min(wa, wb);
-        if (ratio >= F.heroRatio) add('high', 'Heroes', `${this.heroName(hi)} survives ${ratio.toFixed(2)}× longer than ${this.heroName(hi === a ? b : a)} (avg ${Math.max(wa, wb).toFixed(1)} vs ${Math.min(wa, wb).toFixed(1)} waves over active strategies).`);
-      }
+    // class vs class: median build of each class (build = mean waves over active strategies)
+    const avg = (h) => this.mean(active.map(s => get(h, s)).filter(Boolean).map(c => c.waves.mean));
+    const classes = [...new Set(C.map(c => c.hero))];
+    const classScore = {};
+    for (const k of classes) classScore[k] = this.median(builds.filter(b => b.startsWith(k + '/')).map(avg));
+    rep.classScore = classScore;
+    for (let i = 0; i < classes.length; i++) for (let j = i + 1; j < classes.length; j++) {
+      const a = classes[i], b = classes[j], wa = classScore[a], wb = classScore[b];
+      if (!wa || !wb) continue;
+      const hi = wa >= wb ? a : b, ratio = Math.max(wa, wb) / Math.min(wa, wb);
+      if (ratio >= F.heroRatio) add('high', 'Heroes', `${this.heroName(hi)} survives ${ratio.toFixed(2)}× longer than ${this.heroName(hi === a ? b : a)} (median build ${Math.max(wa, wb).toFixed(1)} vs ${Math.min(wa, wb).toFixed(1)} waves over active strategies).`);
     }
     // strategy dominance / traps
-    for (const h of heroes) {
+    for (const h of builds) {
       const cs = active.map(s => get(h, s)).filter(Boolean);
       if (cs.length < 3) continue;
       const med = this.median(cs.map(c => c.waves.mean));
@@ -147,11 +157,10 @@ const SimReport = {
       }
     }
     // skills
-    for (const h in rep.skills) for (const k of ['Q', 'W', 'E', 'R']) {
-      const s = rep.skills[h].keys[k];
-      if (!s) continue;
-      if (h === 'warrior' && (k === 'E' || k === 'W')) continue;   // Bloodthirst and Rage deal no damage of their own
-      if (s.share / 100 < F.lowSkillShare) add('low', 'Skills', `${this.heroName(h)} ${k} ${CONFIG.skills[h][k].name}: ${s.share}% of hero damage (${s.casts} casts, ${s.perCast} dmg/cast).`);
+    for (const h in rep.skills) for (const id in rep.skills[h].keys) {
+      const s = rep.skills[h].keys[id];
+      if (id === 'attack' || CONFIG.skills[h][id].utility) continue;
+      if (s.share / 100 < F.lowSkillShare) add('low', 'Skills', `${this.heroName(h)} ${this.skillName(h, id)}: ${s.share}% of hero damage (${s.casts} casts, ${s.perCast} dmg/cast).`);
     }
     // Keep damage by enemy type
     const kd = {};
@@ -160,7 +169,7 @@ const SimReport = {
     for (const t in kd) if (kdTot > 0 && kd[t] / kdTot > F.keepDamageShare) add('medium', 'Enemies', `${CONFIG.enemies[t] ? CONFIG.enemies[t].name : t} deals ${this.pct(kd[t], kdTot)}% of all Keep damage.`);
     // early losses, caps, stalls
     for (const c of C) {
-      const name = `${this.heroName(c.hero)} · ${this.stratName(c.strategy)}`;
+      const name = `${this.heroName(c.build)} · ${this.stratName(c.strategy)}`;
       if (c.waves.min < F.earlyLossWave) add('high', 'Runs', `${name}: a run fell before wave ${F.earlyLossWave} (min ${c.waves.min}).`);
       if (c.capped === c.n) add('low', 'Runs', `${name}: every run reached the wave cap (${cap}). Raise the cap to tell it apart.`);
       if (c.errors) add('high', 'Runs', `${name}: ${c.errors} run(s) crashed with a game exception: ${c.errorText}`);
@@ -174,11 +183,11 @@ const SimReport = {
     const L = [], s = rep.settings, m = rep.meta, C = rep.combos;
     const fmtT = (sec) => Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
     const table = (head, rows) => { L.push('| ' + head.join(' | ') + ' |', '|' + head.map(() => '---').join('|') + '|'); rows.forEach(r => L.push('| ' + r.join(' | ') + ' |')); L.push(''); };
-    const get = (h, st) => C.find(c => c.hero === h && c.strategy === st);
+    const get = (h, st) => C.find(c => c.build === h && c.strategy === st);
 
     L.push('# Balance simulation report', '');
     L.push(`Generated ${rep.generated}. ${m.completed}/${m.planned} runs${m.cancelled ? ' (cancelled early)' : ''} in ${fmtT(m.realTime)} real time.`);
-    L.push(`Heroes: ${s.heroes.map(h => this.heroName(h)).join(', ')} · Strategies: ${s.strategies.map(x => this.stratName(x)).join(', ')} · Seeds: ${s.seeds} · Wave cap: ${s.waveCap}`, '');
+    L.push(`Heroes: ${s.heroes.map(h => this.heroName(h)).join(', ')} · Loadouts: ${s.heroes.map(h => h + ' ' + SimRunner.loadoutsOf(s, h).join('/')).join(', ')} · Strategies: ${s.strategies.map(x => this.stratName(x)).join(', ')} · Seeds: ${s.seeds} · Wave cap: ${s.waveCap}`, '');
     L.push('Waves are waves cleared. "+" marks a run that hit the wave cap. A bot plays the hero (see `CONFIG.sim.bot`), so absolute numbers reflect the bot, not a skilled player. Compare rows and columns rather than reading single values.', '');
 
     L.push('## Flags', '');
@@ -186,20 +195,25 @@ const SimReport = {
     for (const f of rep.flags) L.push(`- **${f.severity.toUpperCase()}** [${f.area}] ${f.text}`);
     L.push('');
 
+    if (rep.classScore) {
+      L.push('## Classes (median build, mean waves over active strategies)', '');
+      table(['Class', 'Waves'], Object.entries(rep.classScore).map(([k, v]) => [this.heroName(k), Math.round(v * 10) / 10]));
+    }
+
     L.push('## Waves cleared (mean [min–max])', '');
-    const rows = [];
-    for (const h of s.heroes) for (const st of s.strategies) {
+    const rows = [], builds = [...new Set(C.map(c => c.build))];
+    for (const h of builds) for (const st of s.strategies) {
       const c = get(h, st);
       rows.push([this.heroName(h), this.stratName(st), c ? `${c.waves.mean} [${c.waves.min}–${c.waves.max}]${c.capped ? ' +' + c.capped : ''}` : '–']);
     }
     table(['Hero', 'Strategy', 'Waves'], rows);
 
     L.push('## Damage share by source (% of damage dealt to enemies)', '');
-    const srcCols = [['Atk', ['hero:attack', 'hero:chain', 'hero:thorns']], ['Q', ['hero:Q']], ['W', ['hero:W']], ['E', ['hero:E']], ['R', ['hero:R']],
+    const srcCols = [['Atk', ['hero:attack', 'hero:chain', 'hero:thorns']], ['Skills', (c) => Object.keys(c.damage).filter(k => this.isSkillDamage(k))],
       ['Arrow', ['tower:arrow']], ['Cannon', ['tower:cannon']], ['Frost', ['tower:frost']], ['Keep', ['keep']], ['Allies', ['ally:soldier', 'ally:archer']]];
     table(['Hero', 'Strategy'].concat(srcCols.map(x => x[0])), C.map(c => {
       const tot = Object.values(c.damage).reduce((a, b) => a + b, 0);
-      return [this.heroName(c.hero), this.stratName(c.strategy)].concat(srcCols.map(([, ks]) => this.pct(ks.reduce((a, k) => a + (c.damage[k] || 0), 0), tot)));
+      return [this.heroName(c.build), this.stratName(c.strategy)].concat(srcCols.map(([, ks]) => this.pct((typeof ks === 'function' ? ks(c) : ks).reduce((a, k) => a + (c.damage[k] || 0), 0), tot)));
     }));
 
     L.push('## Building value (damage per gold spent, all runs)', '');
@@ -209,9 +223,9 @@ const SimReport = {
     for (const h in rep.skills) {
       const o = rep.skills[h];
       L.push(`**${this.heroName(h)}**: ${Math.round(o.heroDamage)} hero damage over ${Math.round(o.minutes)} min`, '');
-      table(['Skill', 'Casts', 'Casts/min', 'Dmg/cast', '% hero dmg'], ['attack', 'Q', 'W', 'E', 'R'].filter(k => o.keys[k]).map(k => {
+      table(['Skill', 'Casts', 'Casts/min', 'Dmg/cast', '% hero dmg (runs that took it)'], ['attack'].concat(Object.keys(o.keys).filter(k => k !== 'attack')).map(k => {
         const x = o.keys[k];
-        return [k === 'attack' ? 'Basic attacks (+chain)' : k + ' ' + CONFIG.skills[h][k].name, k === 'attack' ? '–' : x.casts, k === 'attack' ? '–' : x.perMin, k === 'attack' ? '–' : x.perCast, x.share];
+        return [k === 'attack' ? 'Basic attacks (+chain)' : this.skillName(h, k), k === 'attack' ? '–' : x.casts, k === 'attack' ? '–' : x.perMin, k === 'attack' ? '–' : x.perCast, x.share];
       }));
     }
 
@@ -219,7 +233,7 @@ const SimReport = {
     table(['Hero', 'Strategy', 'Final level', 'Deaths/run', 'Damage taken by type'], C.map(c => {
       const tot = Object.values(c.heroDamage).reduce((a, b) => a + b, 0);
       const top = Object.entries(c.heroDamage).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${this.pct(v, tot)}%`).join(', ');
-      return [this.heroName(c.hero), this.stratName(c.strategy), c.heroLevel, c.heroDeaths, top || '–'];
+      return [this.heroName(c.build), this.stratName(c.strategy), c.heroLevel, c.heroDeaths, top || '–'];
     }));
 
     L.push('## Keep', '');
@@ -227,24 +241,24 @@ const SimReport = {
     table(['Hero', 'Strategy', 'Final tier', 'Damage taken by type'].concat(hpWaves.map(w => 'HP% w' + w)), C.map(c => {
       const tot = Object.values(c.keepDamage).reduce((a, b) => a + b, 0);
       const top = Object.entries(c.keepDamage).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${this.pct(v, tot)}%`).join(', ');
-      return [this.heroName(c.hero), this.stratName(c.strategy), c.keepTier, top || '–'].concat(hpWaves.map(w => c.keepHpAt[w] != null ? c.keepHpAt[w] : '–'));
+      return [this.heroName(c.build), this.stratName(c.strategy), c.keepTier, top || '–'].concat(hpWaves.map(w => c.keepHpAt[w] != null ? c.keepHpAt[w] : '–'));
     }));
 
     L.push('## Economy (mean per run)', '');
     const outCats = ['keep', 'arrow', 'cannon', 'frost', 'mine'];
     table(['Hero', 'Strategy', 'Earned', 'Bounty', 'Wave tick', 'Mines', 'Unspent'].concat(outCats.map(k => 'Spent ' + k)), C.map(c => {
       const per = (v) => Math.round((v || 0) / c.n);
-      return [this.heroName(c.hero), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.tick), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
+      return [this.heroName(c.build), this.stratName(c.strategy), c.goldEarned, per(c.goldIn.bounty), per(c.goldIn.tick), per(c.goldIn.mines), c.goldUnspent].concat(outCats.map(k => per(c.goldOut[k])));
     }));
 
     L.push('## Items: mean wave of first purchase', '');
     const items = CONFIG.itemOrder.filter(k => C.some(c => c.firstItem[k] != null));
     if (items.length) table(['Hero', 'Strategy'].concat(items.map(k => CONFIG.items[k].name)), C.filter(c => Object.keys(c.firstItem).length).map(c =>
-      [this.heroName(c.hero), this.stratName(c.strategy)].concat(items.map(k => c.firstItem[k] != null ? c.firstItem[k] : '–'))));
+      [this.heroName(c.build), this.stratName(c.strategy)].concat(items.map(k => c.firstItem[k] != null ? c.firstItem[k] : '–'))));
 
     L.push('## Runs', '');
     table(['Hero', 'Strategy', 'Seed', 'Waves', 'End', 'Time', 'Level', 'Kills', 'Deaths', 'Keep tier', 'Items'], rep.runs.map(r =>
-      [this.heroName(r.hero), this.stratName(r.strategy), r.seed, r.wavesCleared, r.end, fmtT(r.time), r.heroLevel, r.kills, r.heroDeaths.length, r.keepTier,
+      [this.heroName(r.hero + '/' + r.loadout), this.stratName(r.strategy), r.seed, r.wavesCleared, r.end, fmtT(r.time), r.heroLevel, r.kills, r.heroDeaths.length, r.keepTier,
         Object.entries(r.items).map(([k, v]) => k + v).join(' ') || '–']));
     return L.join('\n');
   },

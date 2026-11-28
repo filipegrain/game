@@ -1,4 +1,4 @@
-// Balance simulation orchestrator: runs every selected hero × strategy × seed through the real
+// Balance simulation orchestrator: runs every selected hero × loadout × strategy × seed through the real
 // GameScene (driven by SimBot) and collects SimRecorder results in `results`. Headless only: tools/simpar.mjs
 // drives it and builds the SimReport.
 // While it runs: Math.random is seeded per run, Feel effects and sound are off, best scores are not written.
@@ -24,14 +24,16 @@ const SimRunner = {
   origRandom: null,
   cancelled: false,
 
-  // settings: { heroes: [], strategies: [], seeds, waveCap, shard? }
+  // settings: { heroes: [], loadouts?: { hero: [names] }, strategies: [], seeds, waveCap, shard? }
+  // Loadouts default to every one in CONFIG.sim.loadouts[hero].
   // shard { i, n } keeps every n-th job from i on, so n windows (tools/simpar.mjs) split one job list.
   start(fromScene, settings) {
     let jobs = [];
     for (const hero of settings.heroes)
-      for (const strategy of settings.strategies)
-        for (let i = 0; i < settings.seeds; i++)
-          jobs.push({ hero, strategy, seed: CONFIG.sim.baseSeed + i });
+      for (const loadout of SimRunner.loadoutsOf(settings, hero))
+        for (const strategy of settings.strategies)
+          for (let i = 0; i < settings.seeds; i++)
+            jobs.push({ hero, loadout, strategy, seed: CONFIG.sim.baseSeed + i });
     if (settings.shard) jobs = jobs.filter((_, k) => k % settings.shard.n === settings.shard.i);
     if (!jobs.length) return false;
     Object.assign(this, { active: true, jobs, idx: 0, results: [], settings, current: null, cancelled: false });
@@ -41,8 +43,12 @@ const SimRunner = {
     return true;
   },
 
+  loadoutsOf(settings, hero) {
+    return (settings.loadouts && settings.loadouts[hero]) || Object.keys(CONFIG.sim.loadouts[hero]);
+  },
+
   launchJob(fromScene, job) {
-    fromScene.scene.start('GameScene', { hero: job.hero, sim: job });
+    fromScene.scene.start('GameScene', { hero: job.hero, skills: CONFIG.sim.loadouts[job.hero][job.loadout], sim: job });
   },
 
   // GameScene.create (first thing): deterministic dice for this run.
@@ -54,6 +60,7 @@ const SimRunner = {
 
   checkRunEnd(scene) {
     if (scene.stats.wavesCleared >= this.settings.waveCap) this.endRun(scene, 'cap');
+    else if (scene.waves.nextIn == null && scene.stats.time - scene.recorder.waveStartT > CONFIG.sim.stallTime) this.endRun(scene, 'stalled');
   },
 
   endRun(scene, reason) {

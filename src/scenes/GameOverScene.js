@@ -31,8 +31,8 @@ class GameOverScene extends Phaser.Scene {
       this.add.text(x + 100, 585, label, { fontFamily: FONT, fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
       r.on('pointerdown', () => { Sfx.play('click'); fn(); });
     };
-    mk(420, 'Retry', 0x7a2a2a, () => this.scene.start('GameScene', { hero: d.hero }));
+    mk(420, 'Retry', 0x7a2a2a, () => this.scene.start('GameScene', { hero: d.hero, skills: d.skills }));
     mk(660, 'Menu', 0x1f2937, () => this.scene.start('MenuScene', { hero: d.hero }));
-    this.input.keyboard.on('keydown-ENTER', () => this.scene.start('GameScene', { hero: d.hero }));
+    this.input.keyboard.on('keydown-ENTER', () => this.scene.start('GameScene', { hero: d.hero, skills: d.skills }));
   }
 }

@@ -61,12 +61,13 @@ const shards = await Promise.all(pages.map(async (p, i) => {
 }));
 const realTime = (performance.now() - t0) / 1000;
 
-const order = (r) => [settings.heroes.indexOf(r.hero), settings.strategies.indexOf(r.strategy), r.seed];
+const loadouts = await pages[0].ev(`(${JSON.stringify(settings.heroes)}).map(h => SimRunner.loadoutsOf(${JSON.stringify(settings)}, h))`);
+const order = (r) => { const h = settings.heroes.indexOf(r.hero); return [h, loadouts[h].indexOf(r.loadout), settings.strategies.indexOf(r.strategy), r.seed]; };
 const runs = shards.flat().sort((a, b) => {
   const x = order(a), y = order(b), k = x.findIndex((v, j) => v !== y[j]);
   return k < 0 ? 0 : x[k] - y[k];
 });
-const jobs = settings.heroes.length * settings.strategies.length * settings.seeds;
+const jobs = loadouts.reduce((a, l) => a + l.length, 0) * settings.strategies.length * settings.seeds;
 const { rep, md } = await pages[0].ev(`(() => { const rep = SimReport.build(${JSON.stringify(runs)}, ${JSON.stringify(settings)},
   { cancelled: false, realTime: ${realTime}, planned: ${jobs}, tabs: ${tabs} }); return { rep, md: SimReport.markdown(rep) }; })()`);
 await Promise.all(pages.map(p => p.close()));

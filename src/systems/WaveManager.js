@@ -1,16 +1,21 @@
-// Timed waves. Every CONFIG.waves.interval seconds (the first after firstDelay) one wave tick:
-// enemies spawn at every enemy spawn, creeps at every lane whose first tower stands, cleared neutral camps
-// refill, and tick gold (plus Gold Mines) is paid. Endless; enemy count and stats grow per wave.
+// Waves and the minute tick (see CONFIG.waves).
+// Waves: wave 1 after firstDelay; a wave is cleared once every enemy of it has spawned and died, and the next one
+// starts clearDelay s later. Clearing pays the hero the XP of every enemy in the wave, whoever killed them.
+// Minute tick: every tickInterval s (the first at firstDelay) creeps spawn at each lane whose first tower stands,
+// cleared neutral camps refill and tick gold (plus Gold Mines) is paid. Endless; enemy count and stats grow per wave.
 
 class WaveManager {
   constructor(scene) {
     this.scene = scene;
     this.wave = 0;                               // last wave started
-    this.timer = CONFIG.waves.firstDelay;        // s until the next wave tick
+    this.nextIn = CONFIG.waves.firstDelay;       // s until the next wave, or null while a wave is on
+    this.tickIn = CONFIG.waves.firstDelay;       // s until the next minute tick
+    this.waveXp = 0;                             // XP of the current wave's spawned enemies, paid on clear
     this.queues = CONFIG.map.spawns.map(() => ({ items: [], t: 0 }));   // per spawn: pending { type, at }
     this.camps = CONFIG.map.camps.map(def => ({ def, units: [] }));
+    this.curMods = this.mods(1);
     this.next = this.planWave(1);
-    this.refillCamps(this.mods(1));
+    this.refillCamps(this.curMods);
   }
 
   mods(n) {
@@ -40,8 +45,14 @@ class WaveManager {
   }
 
   update(dt) {
-    this.timer -= dt;
-    if (this.timer <= 0) { this.timer += CONFIG.waves.interval; this.tick(); }
+    this.tickIn -= dt;
+    if (this.tickIn <= 0) { this.tickIn += CONFIG.waves.tickInterval; this.tick(); }
+
+    if (this.nextIn != null) {
+      this.nextIn -= dt;
+      if (this.nextIn <= 0) { this.nextIn = null; this.startWave(); }
+    }
+
     this.queues.forEach((q, lane) => {
       q.t += dt;
       while (q.items.length && q.items[0].at <= q.t) {
@@ -51,44 +62,58 @@ class WaveManager {
         const e = this.scene.spawnEnemy(it.type, p.x, p.y, this.curMods);
         e.lane = lane;
         e.viaBridge = true;
+        this.waveXp += e.xp;
       }
     });
+
+    if (this.nextIn == null && this.wave > 0 && this.hostileCount === 0) this.clearWave();
   }
 
-  tick() {
+  startWave() {
     const W = CONFIG.waves, sc = this.scene, plan = this.next;
     this.wave = plan.n;
     this.curMods = plan.mods;
-    sc.stats.wavesCleared = plan.n - 1;   // waves survived
+    this.waveXp = 0;
 
     // enemies: round-robin over the spawns, bosses last
     const lists = this.queues.map(() => []);
     Phaser.Utils.Array.Shuffle(plan.list.slice()).forEach((t, i) => lists[i % lists.length].push(t));
     for (let b = 0; b < plan.bosses; b++) lists[b % lists.length].push('boss');
     this.queues.forEach((q, lane) => {
-      const base = q.items.length ? q.items[q.items.length - 1].at - q.t + W.spawnInterval : 0;
-      q.items.push(...lists[lane].map((type, i) => ({ type, at: q.t + base + i * W.spawnInterval })));
+      q.t = 0;
+      q.items = lists[lane].map((type, i) => ({ type, at: i * W.spawnInterval }));
     });
-
-    this.spawnCreeps();
-    this.refillCamps(plan.mods);
-
-    // income
-    let mineGold = 0;
-    for (const b of sc.buildings) if (b.alive && b.type === 'mine') {
-      const g = b.def.income[b.level - 1];
-      mineGold += g;
-      Feel.floatText(b.x, b.y - 16, '+' + g + 'g', '#ffd23f', 14, 1000);
-    }
-    const gold = W.tickGoldBase + W.tickGoldPerWave * (plan.n - 1);
-    sc.economy.add(gold + mineGold);
-    if (sc.recorder) { sc.recorder.goldEarned('tick', gold); sc.recorder.goldEarned('mines', mineGold); }
 
     Sfx.play('wave');
     if (plan.bosses) Sfx.play('boss');
     sc.events.emit('waveStart', this.wave, plan);
     for (let l = 0; l < this.queues.length; l++) sc.ping(this.spawnPoint(l).x, this.spawnPoint(l).y, 0xff4040);
     this.next = this.planWave(this.wave + 1);
+  }
+
+  clearWave() {
+    const sc = this.scene, xp = this.waveXp;
+    this.nextIn = CONFIG.waves.clearDelay;
+    this.waveXp = 0;
+    sc.stats.wavesCleared = this.wave;
+    sc.events.emit('waveCleared', this.wave, xp);
+    sc.leveling.addXp(xp);
+  }
+
+  // Minute tick: creeps, camp refills, income.
+  tick() {
+    const W = CONFIG.waves, sc = this.scene, n = Math.max(1, this.wave);
+    this.spawnCreeps();
+    this.refillCamps(this.curMods);
+    let mineGold = 0;
+    for (const b of sc.buildings) if (b.alive && b.type === 'mine') {
+      const g = b.def.income[b.level - 1];
+      mineGold += g;
+      Feel.floatText(b.x, b.y - 16, '+' + g + 'g', '#ffd23f', 14, 1000);
+    }
+    const gold = W.tickGoldBase + W.tickGoldPerWave * (n - 1);
+    sc.economy.add(gold + mineGold);
+    if (sc.recorder) { sc.recorder.goldEarned('tick', gold); sc.recorder.goldEarned('mines', mineGold); }
   }
 
   // perLane creeps at each lane's first tower, if it still stands.

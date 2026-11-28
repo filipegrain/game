@@ -16,8 +16,9 @@ class Unit {
     this.facing = Math.PI;
     this.status = {
       slowMul: 1, slowT: 0, stunT: 0, tauntT: 0, tauntBy: null,
-      bleedDps: 0, bleedT: 0, bleedTick: 0, hasteMul: 1, hasteT: 0,
+      hasteMul: 1, hasteT: 0,
       atkSpeedBonus: 0, atkSpeedT: 0, armorBonus: 0, armorT: 0, frozen: false,
+      vuln: 0, vulnT: 0, markVuln: 0, markT: 0, polyT: 0,   // extra damage taken (War Banner, Hunter's Mark); Polymorph
     };
     this.flashT = 0;
     this.gfx = scene.add.graphics().setDepth(o.depth || 20);
@@ -29,6 +30,12 @@ class Unit {
   redraw(color) {
     const g = this.gfx;
     g.clear();
+    if (this.status.polyT > 0 && color == null) {   // Polymorph: a little critter
+      g.fillStyle(0xffd1ec, 1); g.fillCircle(0, 0, 8);
+      g.fillStyle(0xff9ad5, 1); g.fillCircle(-5, -6, 3.5); g.fillCircle(5, -6, 3.5);
+      g.fillStyle(0x000000, 1); g.fillCircle(-2.5, -1, 1.2); g.fillCircle(2.5, -1, 1.2);
+      return;
+    }
     const c = color != null ? color : (this.status.frozen ? 0x9fe9ff : this.color);
     drawShape(g, this.shape, this.radius, c, { line: 2, lineColor: 0x000000, lineAlpha: 0.5 });
   }
@@ -62,7 +69,15 @@ class Unit {
     this.kvx += dx / l * force / resist;
     this.kvy += dy / l * force / resist;
   }
-  applyBleed(dps, t) { this.status.bleedDps = Math.max(this.status.bleedDps, dps); this.status.bleedT = t; }
+  applyAtkSpeed(bonus, t) {
+    const s = this.status;
+    if (s.atkSpeedT <= 0 || bonus >= s.atkSpeedBonus) { s.atkSpeedBonus = bonus; s.atkSpeedT = Math.max(s.atkSpeedT, t); }
+  }
+  applyVuln(v, t) { const s = this.status; s.vuln = Math.max(s.vulnT > 0 ? s.vuln : 0, v); s.vulnT = Math.max(s.vulnT, t); }
+  applyMark(v, t) { this.status.markVuln = v; this.status.markT = t; }
+  applyPoly(t) { const s = this.status, was = s.polyT > 0; s.polyT = Math.max(s.polyT, t); if (!was) this.redraw(); }
+  // damage taken multiplier from vulnerability effects
+  get vulnMul() { const s = this.status; return 1 + (s.vulnT > 0 ? s.vuln : 0) + (s.markT > 0 ? s.markVuln : 0); }
 
   get stunned() { return this.status.stunT > 0; }
   get speedMul() { return (this.status.slowT > 0 ? this.status.slowMul : 1) * (this.status.hasteT > 0 ? this.status.hasteMul : 1); }
@@ -75,20 +90,14 @@ class Unit {
     if (s.hasteT > 0) s.hasteT -= dt;
     if (s.atkSpeedT > 0) s.atkSpeedT -= dt;
     if (s.armorT > 0) s.armorT -= dt;
+    if (s.vulnT > 0) s.vulnT -= dt;
+    if (s.markT > 0) s.markT -= dt;
+    if (s.polyT > 0) { s.polyT -= dt; if (s.polyT <= 0) this.redraw(); }
     if (s.stunT > 0) {
       s.stunT -= dt;
       if (s.stunT <= 0 && s.frozen) { s.frozen = false; this.redraw(); }
     }
     if (s.tauntT > 0) { s.tauntT -= dt; if (s.tauntT <= 0) s.tauntBy = null; }
-    if (s.bleedT > 0) {
-      s.bleedT -= dt;
-      s.bleedTick -= dt;
-      if (s.bleedTick <= 0) {
-        s.bleedTick = 0.5;
-        Combat.dealDamage(this, s.bleedDps * 0.5, { source: this.scene.hero, color: '#ff4d6d', skill: 'Q' });
-        if (this.alive) Feel.burst(this.x, this.y, 0xb0213a, 3);
-      }
-    }
   }
 
   // knockback velocity decays quickly

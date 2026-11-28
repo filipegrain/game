@@ -20,7 +20,7 @@ const HELP = `cdg — drive Castle Defense (headless Chrome + CDP)
 
   launch [--headed]          start static server + Chrome on free ports, wait for MenuScene
   doctor                     read-only health check of the instance this checkout launched
-  start <hero>               MenuScene -> GameScene (warrior|mage) via the START flow
+  start <hero> [ids]         MenuScene -> GameScene (warrior|mage|archer, skill ids comma-separated) via the menu flow
   state                      compact JSON snapshot of scenes and game state
   eval <js>                  evaluate JS in the page (globals: game, CONFIG, ...); prints JSON result
   wait <js> [timeoutMs]      poll until the JS expression is truthy (default 10000 ms)
@@ -152,7 +152,7 @@ const STATE_JS = `(() => {
             cooldowns: Object.fromEntries(Object.entries(h.cooldowns).map(([a, b]) => [a, r(b)])), aiming: h.aiming,
             order: h.order ? h.order.type || true : null, items: h.itemLevels },
     keep: { hp: r(k.hp), maxHp: k.maxHp, tier: k.tier },
-    gold: gs.economy.gold, wave: w.wave, nextWaveIn: r(w.timer),
+    gold: gs.economy.gold, wave: w.wave, nextWaveIn: w.nextIn == null ? null : r(w.nextIn), tickIn: r(w.tickIn),
     enemies: gs.enemies.filter(e => e.alive && !e.neutral).length, neutrals: gs.enemies.filter(e => e.alive && e.neutral).length,
     towers: gs.towers.filter(t => t.alive).map(t => ({ lane: t.lane, order: t.order, hp: r(t.hp) })), allies: gs.allies.filter(a => a.alive).length,
     buildings: gs.buildings.map(b => ({ type: b.type, level: b.level, tx: b.tx, ty: b.ty })),
@@ -294,11 +294,22 @@ async function main() {
         break;
       }
       case 'start': {
-        const [hero] = a;
-        if (!['warrior', 'mage'].includes(hero)) die('usage: start <warrior|mage>');
+        const [hero, list] = a;
+        const heroes = ['warrior', 'mage', 'archer'];
+        if (!heroes.includes(hero)) die('usage: start <warrior|mage|archer> [skillId,skillId,skillId]');
         if (!(await evaluate(c, `game.scene.isActive('MenuScene')`))) die('MenuScene is not active');
-        // hero cards: warrior at (340,180), mage at (660,180), 280x270. START at (540,570) 200x54.
-        await click(c, hero === 'warrior' ? 480 : 800, 300);
+        // hero cards 300x300 at x = 170 + 320·i, y = 180. SKILLS ▸ / START at (540,570) 200x54.
+        await click(c, 320 + heroes.indexOf(hero) * 320, 330);
+        await click(c, 640, 597);
+        // skill card: 3×3 grid of 395×126 cards at x = 40 + 405·col, y = 140 + 136·row, in CONFIG.skills order.
+        // Clear the remembered picks, then click the requested ones (default: the first three) in order.
+        const ids = await evaluate(c, `Object.keys(CONFIG.skills.${hero})`);
+        const want = list ? list.split(',') : ids.slice(0, 3);
+        for (const id of want) if (!ids.includes(id)) die('unknown skill ' + id + ' (have: ' + ids.join(', ') + ')');
+        const picked = await evaluate(c, `game.scene.getScene('MenuScene').choice.skills.${hero}.slice()`);
+        const cardAt = (id) => { const i = ids.indexOf(id); return [40 + (i % 3) * 405 + 197, 140 + Math.floor(i / 3) * 136 + 63]; };
+        for (const id of picked) await click(c, ...cardAt(id));
+        for (const id of want) await click(c, ...cardAt(id));
         await click(c, 640, 597);
         const t0 = Date.now();
         while (!(await evaluate(c, `game.scene.isActive('GameScene') && game.scene.isActive('UIScene')`))) {

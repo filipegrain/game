@@ -2,7 +2,6 @@
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const UI_DEPTH = { panel: 10, content: 20, window: 50, tooltip: 100 };
-const SKILL_KEYS = ['Q', 'W', 'E', 'R'];
 const BUILD_TYPES = ['arrow', 'cannon', 'frost', 'mine'];
 const PCT = (v) => Math.round(v * 100) + '%';
 const STAT_FMT = {
@@ -10,9 +9,7 @@ const STAT_FMT = {
   hpRegen: v => '+' + v + ' HP/s', attackSpeed: v => '+' + PCT(v) + ' attack speed', cdr: v => '-' + PCT(v) + ' cooldowns',
   lifesteal: v => PCT(v) + ' lifesteal', chain: v => 'attacks chain to ' + v + ' enemies', thorns: v => 'reflect ' + PCT(v) + ' melee damage',
   revive: v => 'revive, cooldown ' + Math.round(CONFIG.phoenixCooldown / v) + 's', skillDamage: v => '+' + PCT(v) + ' skill damage',
-  windCloak: v => '+' + PCT(v) + ' speed for ' + CONFIG.windCloakTime + 's after Dash / Poison Pool', whirlChance: v => '+' + PCT(v) + ' Whirl chance', whirlRadius: v => '+' + PCT(v) + ' Whirl radius',
-  dashRange: v => '+' + PCT(v) + ' Dash range', dashCd: v => '-' + v + 's Dash cooldown', killDamage: v => '+' + +v.toFixed(2) + ' damage per kill',
-  rageTime: v => '+' + v + 's Rage', rageCd: v => '-' + v + 's Rage cooldown',
+  windCloak: v => '+' + PCT(v) + ' speed for ' + CONFIG.windCloakTime + 's after a movement skill',
 };
 const ITEM_GRID = 16;   // owned-item icons shown (2 rows of 8)
 const HERO_PANEL = { x: 230, y: 640, w: 820, h: 76 };   // bottom bar
@@ -46,16 +43,14 @@ class UIScene extends Phaser.Scene {
     const on = (name, fn) => { this.gs.events.on(name, fn, this); this.listeners.push([name, fn]); };
     on('notice', (msg) => this.notice(msg));
     on('waveStart', (n, plan) => this.banner('WAVE ' + n, (plan.bosses ? 'BOSS WAVE — ' : '') + plan.count + ' enemies on all lanes', plan.bosses ? '#ff5050' : '#ffffff'));
-    on('levelUp', (lv, unlocked) => {
-      if (unlocked && unlocked.length) this.notice(unlocked.join('\n'), 3000);   // the pick panel is the level-up banner
-      Feel.popScale(this.portraitLevel, 1.6, 150);
-    });
+    on('waveCleared', (n, xp) => this.banner('WAVE ' + n + ' CLEARED', '+' + xp + ' XP   ·   next wave in ' + CONFIG.waves.clearDelay + 's', '#7cf29a'));
+    on('levelUp', () => Feel.popScale(this.portraitLevel, 1.6, 150));
     on('goldChanged', (amt) => { if (amt > 0) Feel.popScale(this.goldText, 1.25, 80); });
     on('keepHit', () => {
       this.vignette = Math.min(0.55, this.vignette + 0.25);
       if (this.time.now - this.lastKeepPing > 2500) { this.lastKeepPing = this.time.now; this.gs.ping(this.gs.keep.x, this.gs.keep.y, 0xff3030); }
     });
-    on('skillReady', (k) => { this.skillPulse[k] = 0.35; if (CONFIG.skills[this.hero.heroKey][k].cast !== 'passive') Sfx.play('ready'); });
+    on('skillReady', (k) => { this.skillPulse[k] = 0.35; Sfx.play('ready'); });
     on('skillDenied', (k) => { this.skillDenied[k] = 0.25; });
     on('pauseChanged', (p) => this.pauseLayer.setVisible(p));
     on('selectionChanged', () => this.refreshSelection());
@@ -69,9 +64,8 @@ class UIScene extends Phaser.Scene {
       this.listeners = [];
     });
 
-    this.time.delayedCall(400, () => this.notice(this.hero.heroKey === 'warrior'
-      ? 'Warrior: Q, W and E are passive. R dashes toward the cursor. Level up to pick items.'
-      : 'Skills: press W/E/R to aim, left-click to cast (right-click / Esc cancels). Level up to pick items.', 5000));
+    this.time.delayedCall(400, () => this.notice('Skills: ' + SKILL_KEYS.map(k => k + ' ' + this.hero.skillDefs[k].name).join(' · ') +
+      '\nAimed skills: press the key, then left-click (right-click / Esc cancels). Clear a wave for XP.', 5000));
   }
 
   // ------------------------------------------------------------------ helpers
@@ -166,14 +160,13 @@ class UIScene extends Phaser.Scene {
     this.statText = this.text(X + 78, Y + 43, '', 9, '#9ca3af');
     // skills
     this.skillG = this.add.graphics().setDepth(UI_DEPTH.content);
-    this.skillPulse = { Q: 0, W: 0, E: 0, R: 0 };
-    this.skillDenied = { Q: 0, W: 0, E: 0, R: 0 };
+    this.skillPulse = { Q: 0, W: 0, E: 0 };
+    this.skillDenied = { Q: 0, W: 0, E: 0 };
     this.skillUI = {};
     SKILL_KEYS.forEach((k, i) => {
-      const sx = X + 386 + i * 66, sy = Y + 6;
-      const def = CONFIG.skills[this.hero.heroKey][k];
-      const zone = this.add.zone(sx, sy, 44, 44).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(UI_DEPTH.content);
-      zone.on('pointerdown', (p) => { if (p.leftButtonDown() && def.cast === 'auto') { this.hero.kit.toggleAuto(k); this.showTip(this.skillTip(k)); } });
+      const sx = X + 410 + i * 80, sy = Y + 6;
+      const def = this.hero.skillDefs[k];
+      const zone = this.add.zone(sx, sy, 44, 44).setOrigin(0).setInteractive().setDepth(UI_DEPTH.content);
       zone.on('pointerover', () => this.showTip(this.skillTip(k)));
       zone.on('pointerout', () => this.hideTip());
       const keyT = this.text(sx + 3, sy + 1, k, 11, '#ffffff', { fontStyle: 'bold' }).setDepth(UI_DEPTH.content + 3);
@@ -205,14 +198,12 @@ class UIScene extends Phaser.Scene {
   }
 
   skillTip(k) {
-    const h = this.hero, def = CONFIG.skills[h.heroKey][k];
-    const how = { aim: 'Press ' + k + ', then left-click to cast', instant: 'Press ' + k + ' to cast', passive: 'Passive', auto: 'Autocasts while attacking — ' + k + ' toggles (' + (h.kit.autoQ ? 'ON' : 'OFF') + ')' }[def.cast];
+    const h = this.hero, def = h.skillDefs[k];
+    const how = { aim: 'Press ' + k + ', then left-click to cast', instant: 'Press ' + k + ' to cast' }[def.cast];
     const sc = CONFIG.heroCommon.skillScaling, lv = h.level - 1;
-    let str = def.name + '  [' + k + ']\n' + def.desc + '\n' + how +
-      (def.cd ? '\nCooldown ' + h.skillCooldown(k).toFixed(1) + 's' : '') +
+    return def.name + '  [' + k + ']\n' + def.desc + '\n' + how +
+      '\nCooldown ' + h.skillCooldown(k).toFixed(1) + 's' +
       (lv > 0 ? '\nLevel bonus: +' + Math.round(sc.damage * lv * 100) + '% power, +' + Math.round(sc.radius * lv * 100) + '% area, +' + Math.round(sc.duration * lv * 100) + '% duration' : '');
-    for (const m of def.milestones || []) str += '\n' + (h.level >= m.level ? '[x] ' : '[ ] ') + 'Lv ' + m.level + ': ' + m.text;
-    return str;
   }
 
   statLines(key, lv) {
@@ -515,11 +506,11 @@ class UIScene extends Phaser.Scene {
     const pt = this.add.text(640, 120, 'PAUSED', { fontFamily: FONT, fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
     const help = this.add.text(640, 360, [
       'Right-click: move / attack (hold to follow cursor)      A + left-click: attack-move      S: stop',
-      'Q W E R: aim a skill, then left-click to cast (right-click / Esc cancels). Warrior: Q/W/E passive, R dashes.',
-      'Self-cast skills fire on key press. Mage Fire Bolt autocasts at your attack target (Q toggles).',
+      'Q W E: aim a skill, then left-click to cast (right-click / Esc cancels). Instant skills fire on key press.',
+      'Clear a whole wave for its XP; the next wave comes ' + CONFIG.waves.clearDelay + 's later.',
       'V: build panel   1-4: place building on grass or dirt (enemies attack what blocks them)   Right-click / Esc: cancel',
       'Left-click building or Keep: select (upgrade / sell)   U: upgrade Keep (powers up lane towers and creeps)',
-      "A wave hits every lane each minute. Creeps march from each lane's first tower while it stands.",
+      "Every minute creeps march from each lane's first tower (while it stands), camps refill and gold is paid.",
       'Level up: pick 1 of 3 items (game pauses)   Neutral camps: attack them for gold and XP',
       'Camera: screen edges, middle-drag or minimap. Hold Space to follow the hero',
       'P / Esc: pause   M: mute',
@@ -587,7 +578,8 @@ class UIScene extends Phaser.Scene {
     this.setText(this.goldText, 'gold', String(gs.economy.gold));
     this.setText(this.waveText, 'wave', 'Wave ' + wv.wave);
     this.setText(this.phaseText, 'phase', 'Enemies: ' + wv.hostileCount + '   Time ' + this.clock(gs.stats.time));
-    this.setText(this.nextText, 'next', 'Wave ' + wv.next.n + ' in ' + this.clock(Math.max(0, Math.ceil(wv.timer))) + ' (' + wv.next.count + (wv.next.bosses ? ', BOSS' : '') + ')');
+    this.setText(this.nextText, 'next', (wv.nextIn != null ? 'Wave ' + wv.next.n + ' in ' + Math.max(0, Math.ceil(wv.nextIn)) + 's' : 'Clear the wave!') +
+      ' (' + wv.next.count + (wv.next.bosses ? ', BOSS' : '') + ')   Creeps in ' + Math.max(0, Math.ceil(wv.tickIn)) + 's');
     const k = gs.keep;
     const kb = this.keepBarG;
     kb.clear();
@@ -616,7 +608,7 @@ class UIScene extends Phaser.Scene {
       hint = 'Placing ' + d.name + ' (' + d.cost + 'g) — left-click to place. Right-click / Esc to cancel.';
       if (gs.build.ghostReason) hint += '\n' + gs.build.ghostReason;
     } else if (gs.cursorMode === 'attack') hint = 'ATTACK-MOVE: left-click a destination (right-click / Esc cancels)';
-    else if (h.aiming) hint = CONFIG.skills[h.heroKey][h.aiming].name.toUpperCase() + ': left-click to cast (right-click / Esc cancels)';
+    else if (h.aiming) hint = h.skillDefs[h.aiming].name.toUpperCase() + ': left-click to cast (right-click / Esc cancels)';
     this.setText(this.hintText, 'hint', hint);
 
     // death
@@ -628,7 +620,6 @@ class UIScene extends Phaser.Scene {
     this.vignette = Math.max(0, this.vignette - dt * 0.8);
     const vg = this.vigG;
     vg.clear();
-    if (h.alive && h.rage) { vg.fillStyle(0xff0000, 0.1 + 0.05 * Math.sin(this.time.now / 90)); vg.fillRect(0, 0, 1280, 720); }   // Warrior Rage tint
     if (this.vignette > 0.01) {
       for (let i = 0; i < 6; i++) {
         const a = this.vignette * (1 - i / 6) * 0.5, t = 6 + i * 6;
@@ -659,36 +650,22 @@ class UIScene extends Phaser.Scene {
     const sg = this.skillG;
     sg.clear();
     for (const k of SKILL_KEYS) {
-      const u = this.skillUI[k], def = CONFIG.skills[h.heroKey][k];
+      const u = this.skillUI[k], def = h.skillDefs[k];
       const cd = h.cooldowns[k];
-      const learned = true;
-      const autoOff = def.cast === 'auto' && !h.kit.autoQ;
       this.skillPulse[k] = Math.max(0, this.skillPulse[k] - dt);
       this.skillDenied[k] = Math.max(0, this.skillDenied[k] - dt);
       const x = u.sx, y = u.sy, S = 44;
-      let base = learned ? 0x2a3a5c : 0x161a22;
-      sg.fillStyle(base, 1); sg.fillRoundedRect(x, y, S, S, 6);
-      // icon
-      if (learned) this.drawSkillIcon(sg, h.heroKey, k, x + S / 2, y + S / 2 - 6);
-      if (learned && cd > 0) {
-        const frac = cd / h.cdMax[k];
-        this.sweep(sg, x, y, S, frac);
-      }
-      if (autoOff && cd <= 0) { sg.fillStyle(0x000000, 0.45); sg.fillRoundedRect(x, y, S, S, 6); }
+      sg.fillStyle(0x2a3a5c, 1); sg.fillRoundedRect(x, y, S, S, 6);
+      drawSkillIcon(sg, def, x + S / 2, y + S / 2 - 6, 11);
+      if (cd > 0) this.sweep(sg, x, y, S, cd / h.cdMax[k]);
       if (h.aiming === k) { sg.lineStyle(3, 0xffffff, 1); sg.strokeRoundedRect(x - 1, y - 1, S + 2, S + 2, 6); }
       const pulse = this.skillPulse[k];
-      sg.lineStyle(2, this.skillDenied[k] > 0 ? 0xef4444 : pulse > 0 ? 0xffffff : learned ? 0x5b7bb5 : 0x3a4252, 1);
+      sg.lineStyle(2, this.skillDenied[k] > 0 ? 0xef4444 : pulse > 0 ? 0xffffff : 0x5b7bb5, 1);
       sg.strokeRoundedRect(x, y, S, S, 6);
       if (pulse > 0) { sg.lineStyle(4, 0xffffff, pulse / 0.35); sg.strokeRoundedRect(x - 4 * (1 - pulse / 0.35), y - 4 * (1 - pulse / 0.35), S + 8 * (1 - pulse / 0.35), S + 8 * (1 - pulse / 0.35), 8); }
-      this.setText(u.cdT, 'cd' + k, learned && cd > 0 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : '');
-      u.nameT.setAlpha(learned ? 1 : 0.4);
-      if (def.cast === 'auto') {
-        this.setText(u.autoT, 'auto' + k, autoOff ? 'AUTO OFF' : 'AUTO');
-        u.autoT.setColor(autoOff ? '#ef4444' : '#7cf29a');
-      } else if (h.kit.skillLabel) {
-        this.setText(u.autoT, 'auto' + k, h.kit.skillLabel(k));
-        u.autoT.setColor(k === 'W' && h.rage ? '#ff5050' : '#9ca3af');
-      }
+      this.setText(u.cdT, 'cd' + k, cd > 0 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : '');
+      this.setText(u.autoT, 'auto' + k, h.kit.skillLabel(k));
+      u.autoT.setColor('#fde68a');
     }
 
     // items
@@ -719,30 +696,14 @@ class UIScene extends Phaser.Scene {
     g.fillPoints(pts, true);
   }
 
-  drawSkillIcon(g, heroKey, k, x, y) {
-    const icons = {
-      warrior: {
-        Q: () => { g.lineStyle(3, 0x9cc8ff, 1); g.strokeCircle(x, y, 12); g.fillStyle(0xffffff, 1); g.fillCircle(x, y, 4); g.fillTriangle(x + 12, y - 6, x + 18, y, x + 8, y + 2); },
-        W: () => { g.fillStyle(0xff3030, 1); g.fillTriangle(x, y - 14, x + 10, y + 8, x - 10, y + 8); g.fillStyle(0xffd23f, 1); g.fillTriangle(x, y - 4, x + 4, y + 6, x - 4, y + 6); },
-        E: () => { g.fillStyle(0xb0213a, 1); g.fillCircle(x, y + 3, 9); g.fillTriangle(x - 8, y, x + 8, y, x, y - 14); },
-        R: () => { g.fillStyle(0x9cc8ff, 1); g.fillTriangle(x + 12, y, x - 6, y - 9, x - 6, y + 9); g.fillRect(x - 14, y - 2, 8, 4); },
-      },
-      mage: {
-        Q: () => { g.fillStyle(0xff7a2a, 1); g.fillCircle(x + 4, y, 7); g.fillStyle(0xffd23f, 1); g.fillTriangle(x - 3, y - 5, x - 15, y, x - 3, y + 5); },
-        W: () => { g.fillStyle(0x4f9a2a, 1); g.fillEllipse(x, y + 4, 30, 14); g.fillStyle(0x9be86a, 1); g.fillCircle(x - 6, y + 2, 3); g.fillCircle(x + 5, y - 3, 4); g.fillCircle(x + 1, y - 9, 2.5); },
-        E: () => { g.lineStyle(3, 0x9fe9ff, 1); for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; g.lineBetween(x - Math.cos(a) * 13, y - Math.sin(a) * 13, x + Math.cos(a) * 13, y + Math.sin(a) * 13); } g.fillStyle(0xffffff, 1); g.fillCircle(x, y, 3); },
-        R: () => { g.fillStyle(0xff5030, 1); g.fillCircle(x - 6, y + 4, 5); g.fillCircle(x + 6, y - 2, 6); g.fillCircle(x, y - 10, 4); },
-      },
-    };
-    icons[heroKey][k]();
-  }
+
 
   clock(s) { s = Math.floor(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
 
   // Spawns to flag: all of them just before a wave tick, then each while it is still spawning.
   activeSpawns() {
     const wv = this.gs.waves;
-    return CONFIG.map.spawns.map((s, i) => i).filter(i => wv.timer < 8 || wv.queues[i].items.length > 0);
+    return CONFIG.map.spawns.map((s, i) => i).filter(i => (wv.nextIn != null && wv.nextIn < 8) || wv.queues[i].items.length > 0);
   }
 
   drawEdgeIndicators() {
@@ -759,7 +720,7 @@ class UIScene extends Phaser.Scene {
       const minX = 30, maxX = 1250, minY = 70, maxY = 624;
       if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
         g.lineStyle(3, 0xff3030, blink); g.strokeCircle(sx, sy, 48);
-        label.setPosition(sx, sy - 60).setText((gs.waves.timer < 8 ? 'NEXT: ' : '') + name).setVisible(true);
+        label.setPosition(sx, sy - 60).setText((gs.waves.nextIn != null ? 'NEXT: ' : '') + name).setVisible(true);
         return;
       }
       const cx = 640, cy = 325;
@@ -774,4 +735,12 @@ class UIScene extends Phaser.Scene {
       label.setPosition(ex - Math.cos(a) * 26, ey - Math.sin(a) * 18).setText(name).setVisible(true);
     });
   }
+}
+
+// Skill icon from its config: [shape, colour] with a white rim (HUD and the skill card).
+function drawSkillIcon(g, def, x, y, r) {
+  g.save();
+  g.translateCanvas(x, y);
+  drawShape(g, def.icon[0], r, def.icon[1], { line: 2, lineColor: 0xffffff, lineAlpha: 0.9 });
+  g.restore();
 }

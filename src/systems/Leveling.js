@@ -36,12 +36,7 @@ class Leveling {
       Feel.popScale(h.gfx, 1.5, 140);
     }
     Sfx.play('levelup');
-    // milestones reached this level
-    const unlocked = [];
-    for (const k of ['Q', 'W', 'E', 'R']) {
-      for (const m of h.skillDefs[k].milestones || []) if (m.level === h.level) unlocked.push(h.skillDefs[k].name + ': ' + m.text);
-    }
-    this.scene.events.emit('levelUp', h.level, unlocked);
+    this.scene.events.emit('levelUp', h.level);
     this.scene.picks.grant();
   }
 }

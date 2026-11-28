@@ -16,7 +16,7 @@ This directory is the maintained source for verifying what a player can do in Ca
 - Find world targets with `eval` rather than hard-coding them. Map tiles are 32 px, so world = `CONFIG.px(tile) + 16` for a tile centre.
 - Wait with `wait '<expr>' <ms>`, never with a fixed sleep.
 - The camera is free and starts on the Keep. `wclick` only reaches points on screen: move the camera first (left-click the minimap, or hold Space to centre on the hero).
-- Waves are timed (`CONFIG.waves.firstDelay`, then every `interval` s). To skip ahead without waiting in real time, say so in the report and step the scene: `eval '(()=>{const gs=game.scene.getScene("GameScene"); for(let i=0;i<30*40;i++) gs.step(1/30)})()'`.
+- Wave 1 comes after `CONFIG.waves.firstDelay` s; each next one `clearDelay` s after the last is dead. To skip ahead without waiting in real time, say so in the report and step the scene: `eval '(()=>{const gs=game.scene.getScene("GameScene"); for(let i=0;i<30*40;i++) gs.step(1/30)})()'`.
 
 ## Proof and skip reporting
 
